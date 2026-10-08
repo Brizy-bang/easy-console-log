@@ -1,0 +1,14 @@
+{
+  "easyConsoleLog.description": "快速生成带文件和行号信息的 console.log 调试语句，支持一键注释/取消注释/删除所有日志",
+  "easyConsoleLog.command.insert": "Easy Console Log: 插入日志语句",
+  "easyConsoleLog.command.commentAll": "Easy Console Log: 注释所有日志",
+  "easyConsoleLog.command.uncommentAll": "Easy Console Log: 取消注释所有日志",
+  "easyConsoleLog.command.deleteAll": "Easy Console Log: 删除所有日志",
+  "easyConsoleLog.configuration.title": "Easy Console Log",
+  "easyConsoleLog.logMessagePrefix.description": "日志消息前缀标记，同时用于识别由本扩展生成的日志",
+  "easyConsoleLog.quote.description": "日志消息使用的引号风格",
+  "easyConsoleLog.addSemicolon.description": "是否在日志语句末尾添加分号",
+  "easyConsoleLog.logFunction.description": "生成日志使用的函数，如 console.log / console.debug / console.warn",
+  "easyConsoleLog.includeFilename.description": "日志消息中是否包含文件名",
+  "easyConsoleLog.includeLineNumber.description": "日志消息中是否包含行号"
+}

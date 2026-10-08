@@ -1,0 +1,115 @@
+{
+  "name": "easy-console-log",
+  "displayName": "Easy Console Log",
+  "description": "%easyConsoleLog.description%",
+  "version": "0.1.1",
+  "publisher": "local",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other",
+    "Snippets"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "easyConsoleLog.insert",
+        "title": "%easyConsoleLog.command.insert%"
+      },
+      {
+        "command": "easyConsoleLog.commentAll",
+        "title": "%easyConsoleLog.command.commentAll%"
+      },
+      {
+        "command": "easyConsoleLog.uncommentAll",
+        "title": "%easyConsoleLog.command.uncommentAll%"
+      },
+      {
+        "command": "easyConsoleLog.deleteAll",
+        "title": "%easyConsoleLog.command.deleteAll%"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "easyConsoleLog.insert",
+        "key": "ctrl+alt+l",
+        "mac": "ctrl+alt+l",
+        "when": "editorTextFocus"
+      },
+      {
+        "command": "easyConsoleLog.commentAll",
+        "key": "alt+shift+c",
+        "mac": "alt+shift+c",
+        "when": "editorTextFocus"
+      },
+      {
+        "command": "easyConsoleLog.uncommentAll",
+        "key": "alt+shift+u",
+        "mac": "alt+shift+u",
+        "when": "editorTextFocus"
+      },
+      {
+        "command": "easyConsoleLog.deleteAll",
+        "key": "alt+shift+d",
+        "mac": "alt+shift+d",
+        "when": "editorTextFocus"
+      }
+    ],
+    "configuration": {
+      "title": "%easyConsoleLog.configuration.title%",
+      "properties": {
+        "easyConsoleLog.logMessagePrefix": {
+          "type": "string",
+          "default": "🪵",
+          "description": "%easyConsoleLog.logMessagePrefix.description%"
+        },
+        "easyConsoleLog.quote": {
+          "type": "string",
+          "enum": [
+            "'",
+            "\"",
+            "`"
+          ],
+          "default": "'",
+          "description": "%easyConsoleLog.quote.description%"
+        },
+        "easyConsoleLog.addSemicolon": {
+          "type": "boolean",
+          "default": true,
+          "description": "%easyConsoleLog.addSemicolon.description%"
+        },
+        "easyConsoleLog.logFunction": {
+          "type": "string",
+          "default": "console.log",
+          "description": "%easyConsoleLog.logFunction.description%"
+        },
+        "easyConsoleLog.includeFilename": {
+          "type": "boolean",
+          "default": true,
+          "description": "%easyConsoleLog.includeFilename.description%"
+        },
+        "easyConsoleLog.includeLineNumber": {
+          "type": "boolean",
+          "default": true,
+          "description": "%easyConsoleLog.includeLineNumber.description%"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "lint": "eslint src --ext ts"
+  },
+  "dependencies": {
+    "typescript": "~5.5.4"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.85.0"
+  }
+}
