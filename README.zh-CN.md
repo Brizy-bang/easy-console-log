@@ -2,7 +2,7 @@
 
 [English](./README.md) | **简体中文**
 
-一个类似 Turbo Console Log 的 VSCode 扩展：一键生成带文件名、行号、变量名的 `console.log` 调试语句，并能批量注释 / 恢复 / 删除所有生成的日志。
+一个 VSCode 扩展，用于管理 `console.*` 调试语句：一键生成带文件名、行号、变量名的 `console.log`，在侧边栏查看当前文件所有 console 调用，并批量注释 / 恢复 / 删除。
 
 ## 功能
 
@@ -12,6 +12,14 @@
 | `Easy Console Log: 注释所有日志` | `Alt + Shift + C` | 注释当前文件内所有生成的日志 |
 | `Easy Console Log: 取消注释所有日志` | `Alt + Shift + U` | 恢复所有被注释的日志 |
 | `Easy Console Log: 删除所有日志` | `Alt + Shift + D` | 删除当前文件内所有生成的日志（含被注释的） |
+
+## Console 侧边栏
+
+点击活动栏上的 **Easy Console Log** 图标打开侧边栏，里面会列出当前文件中所有的 `console.log / debug / info / warn / error` 调用：
+
+- 点击列表项可跳转到对应代码行。
+- 顶部工具栏支持一键**注释全部**、**取消注释全部**、**删除全部**。
+- 切换编辑器或修改文档时，列表会自动刷新。
 
 ## 生成的日志格式
 

@@ -2,7 +2,7 @@
   "name": "easy-console-log",
   "displayName": "Easy Console Log",
   "description": "%easyConsoleLog.description%",
-  "version": "0.1.1",
+  "version": "0.1.3",
   "publisher": "Brizy-b",
   "license": "MIT",
   "repository": {
@@ -17,11 +17,17 @@
     "Snippets"
   ],
   "main": "./out/extension.js",
+  "icon": "images/icon.png",
   "activationEvents": [
     "onCommand:easyConsoleLog.insert",
     "onCommand:easyConsoleLog.commentAll",
     "onCommand:easyConsoleLog.uncommentAll",
     "onCommand:easyConsoleLog.deleteAll",
+    "onCommand:easyConsoleLog.explorer.commentAll",
+    "onCommand:easyConsoleLog.explorer.uncommentAll",
+    "onCommand:easyConsoleLog.explorer.deleteAll",
+    "onCommand:easyConsoleLog.explorer.refresh",
+    "onView:easyConsoleLog.explorer",
     "onLanguage:javascript",
     "onLanguage:typescript",
     "onLanguage:javascriptreact",
@@ -46,8 +52,70 @@
       {
         "command": "easyConsoleLog.deleteAll",
         "title": "%easyConsoleLog.command.deleteAll%"
+      },
+      {
+        "command": "easyConsoleLog.explorer.commentAll",
+        "title": "%easyConsoleLog.command.explorer.commentAll%",
+        "icon": "$(comment)"
+      },
+      {
+        "command": "easyConsoleLog.explorer.uncommentAll",
+        "title": "%easyConsoleLog.command.explorer.uncommentAll%",
+        "icon": "$(unfold)"
+      },
+      {
+        "command": "easyConsoleLog.explorer.deleteAll",
+        "title": "%easyConsoleLog.command.explorer.deleteAll%",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "easyConsoleLog.explorer.refresh",
+        "title": "%easyConsoleLog.command.explorer.refresh%",
+        "icon": "$(refresh)"
       }
     ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "easyConsoleLog",
+          "title": "%easyConsoleLog.view.container.title%",
+          "icon": "images/icon.png"
+        }
+      ]
+    },
+    "views": {
+      "easyConsoleLog": [
+        {
+          "id": "easyConsoleLog.explorer",
+          "name": "%easyConsoleLog.view.explorer.title%",
+          "when": "editorLangId == javascript || editorLangId == typescript || editorLangId == javascriptreact || editorLangId == typescriptreact || editorLangId == vue || editorLangId == json"
+        }
+      ]
+    },
+    "menus": {
+      "view/title": [
+        {
+          "command": "easyConsoleLog.explorer.commentAll",
+          "when": "view == easyConsoleLog.explorer",
+          "group": "navigation@1"
+        },
+        {
+          "command": "easyConsoleLog.explorer.uncommentAll",
+          "when": "view == easyConsoleLog.explorer",
+          "group": "navigation@2"
+        },
+        {
+          "command": "easyConsoleLog.explorer.deleteAll",
+          "when": "view == easyConsoleLog.explorer",
+          "group": "navigation@3"
+        },
+        {
+          "command": "easyConsoleLog.explorer.refresh",
+          "when": "view == easyConsoleLog.explorer",
+          "group": "navigation@4"
+        }
+      ]
+    },
     "keybindings": [
       {
         "command": "easyConsoleLog.insert",
@@ -116,9 +184,11 @@
     }
   },
   "scripts": {
-    "vscode:prepublish": "npm run compile",
+    "vscode:prepublish": "npm run compile && npm run esbuild-base -- --minify",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
+    "esbuild-base": "esbuild ./src/extension.ts --bundle --outfile=./out/extension.js --external:vscode --format=cjs --platform=node",
+    "esbuild": "npm run esbuild-base -- --sourcemap",
     "lint": "eslint src --ext ts"
   },
   "dependencies": {
@@ -126,6 +196,7 @@
   },
   "devDependencies": {
     "@types/node": "^20.11.0",
-    "@types/vscode": "^1.85.0"
+    "@types/vscode": "^1.85.0",
+    "esbuild": "^0.24.0"
   }
 }

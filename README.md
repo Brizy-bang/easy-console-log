@@ -2,7 +2,7 @@
 
 **English** | [简体中文](./README.zh-CN.md)
 
-A Turbo Console Log–style VS Code extension: insert contextual `console.log` statements with a single keystroke, and batch comment / uncomment / delete every generated log.
+A VS Code extension that helps you manage `console.*` statements: insert contextual `console.log` with a single keystroke, explore all console calls in the current file from the sidebar, and batch comment / uncomment / delete them.
 
 ## Features
 
@@ -12,6 +12,14 @@ A Turbo Console Log–style VS Code extension: insert contextual `console.log` s
 | `Easy Console Log: Comment All Logs` | `Alt + Shift + C` | Comment out all generated logs in the current file |
 | `Easy Console Log: Uncomment All Logs` | `Alt + Shift + U` | Restore all commented logs |
 | `Easy Console Log: Delete All Logs` | `Alt + Shift + D` | Delete all generated logs in the current file (including commented ones) |
+
+## Console Explorer Sidebar
+
+Open the **Easy Console Log** activity bar icon. The sidebar lists every `console.log / debug / info / warn / error` call in the current file:
+
+- Click an item to jump to the line.
+- Use the toolbar buttons to **Comment All**, **Uncomment All**, or **Delete All** console calls in the current file.
+- The list refreshes automatically when you switch editors or change the document.
 
 ## Generated Log Format
 
