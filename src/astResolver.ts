@@ -16,6 +16,16 @@ export interface ResolvedTarget {
   indentLine: number;
 }
 
+/** 跳过/失败原因（英文原文，同时作为 l10n 的 key，由调用方翻译） */
+export const REASON = {
+  typePosition: 'type or enum declaration',
+  arrowSignature: 'arrow function with an expression body has no place for a statement',
+  insideArrowBody: 'inside an arrow function expression body',
+  sameLineBlock: 'the block opens and closes on the same line',
+  noStatement: 'no statement boundary found',
+  outsideScript: 'not inside a <script> block',
+} as const;
+
 export type ResolveResult =
   | { ok: true; target: ResolvedTarget }
   | { ok: false; reason: string; /** true 表示该位置不适合打日志，应跳过而非降级 */ skip: boolean };
@@ -155,13 +165,12 @@ export function createResolver(text: string, fileName: string, kind: ts.ScriptKi
 
   const ok = (target: ResolvedTarget): ResolveResult => ({ ok: true, target });
   const fail = (reason: string, skip: boolean): ResolveResult => ({ ok: false, reason, skip });
-  const SAME_LINE = '代码块与花括号在同一行，无法插入';
 
   /** 进入代码块内部第一行；花括号首尾同行时插入会落到块外，需跳过 */
   const insideBlock = (body: ts.Block): ResolveResult => {
     const line = lineOf(body.getStart(sourceFile));
     if (lineOf(body.end - 1) === line) {
-      return fail(SAME_LINE, true);
+      return fail(REASON.sameLineBlock, true);
     }
     return ok({ mode: 'inside-start', anchorLine: line, indentLine: line });
   };
@@ -170,7 +179,7 @@ export function createResolver(text: string, fileName: string, kind: ts.ScriptKi
     const leaf = innermostNode(sourceFile, offset);
 
     if (isInTypePosition(leaf)) {
-      return fail('类型/枚举声明位置', true);
+      return fail(REASON.typePosition, true);
     }
 
     // 1. 函数签名区（参数名、函数名）→ 函数体内部第一行
@@ -186,7 +195,7 @@ export function createResolver(text: string, fileName: string, kind: ts.ScriptKi
             }
           } else {
             // 表达式体内的变量（多为参数）在外层语句处已不在作用域
-            return fail(inSignature ? '箭头函数表达式体，无法插入语句' : '位于箭头函数表达式体内', true);
+            return fail(inSignature ? REASON.arrowSignature : REASON.insideArrowBody, true);
           }
         }
         break;
@@ -210,7 +219,7 @@ export function createResolver(text: string, fileName: string, kind: ts.ScriptKi
     // 3. 常规语句边界
     const stmt = statementAncestor(leaf);
     if (!stmt) {
-      return fail('未找到语句边界', false);
+      return fail(REASON.noStatement, false);
     }
     const container = stmt.parent;
     const inBlock = !ts.isSourceFile(container);
@@ -218,7 +227,7 @@ export function createResolver(text: string, fileName: string, kind: ts.ScriptKi
     if (ts.isReturnStatement(stmt) || ts.isThrowStatement(stmt)) {
       // return/throw 之后不可达，插到语句之前；与块起始同行时插到行首会跑到块外
       if (inBlock && lineOf(container.getStart(sourceFile)) === startLine) {
-        return fail(SAME_LINE, true);
+        return fail(REASON.sameLineBlock, true);
       }
       return ok({ mode: 'before', anchorLine: startLine, indentLine: startLine });
     }
@@ -226,7 +235,7 @@ export function createResolver(text: string, fileName: string, kind: ts.ScriptKi
     const anchorLine = lineOf(Math.max(stmt.end - 1, stmt.getStart(sourceFile)));
     const braced = ts.isBlock(container) || ts.isModuleBlock(container);
     if (braced && lineOf(container.end - 1) === anchorLine) {
-      return fail(SAME_LINE, true);
+      return fail(REASON.sameLineBlock, true);
     }
     return ok({ mode: 'after', anchorLine, indentLine: startLine });
   }

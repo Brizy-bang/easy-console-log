@@ -9,6 +9,8 @@
 | 命令 | 快捷键 (Win/Linux / Mac) | 说明 |
 | --- | --- | --- |
 | `Easy Console Log: 插入日志语句` | `Ctrl + Alt + L` | 为选中的表达式（或光标下的变量）在合适位置插入日志 |
+| `Easy Console Log: 插入指定级别的日志语句…` | — | 先选择 `log / info / debug / warn / error / trace` 再插入，上次的选择排在最前 |
+| `Easy Console Log: 刷新日志行号` | — | 把当前文件中生成日志里过时的 `文件名:行号` 刷新为当前位置 |
 | `Easy Console Log: 注释所有日志` | `Alt + Shift + C` | 注释当前文件内所有生成的日志 |
 | `Easy Console Log: 取消注释所有日志` | `Alt + Shift + U` | 恢复所有被注释的日志 |
 | `Easy Console Log: 删除所有日志` | `Alt + Shift + D` | 删除当前文件内所有生成的日志（含被注释的） |
@@ -19,15 +21,33 @@
 
 所有注释 / 取消注释 / 删除操作都以**完整调用**为单位，跨多行的 `console.log(...)`（如被 Prettier 折行）会整体处理，不会留下半截语法错误的代码。
 
+想为某个级别绑定独立快捷键，可在 `keybindings.json` 中给 `easyConsoleLog.insert` 传参：
+
+```json
+{ "key": "ctrl+alt+w", "command": "easyConsoleLog.insert", "args": { "level": "warn" } }
+```
+
+### Quick Fix
+
+光标放在 console 调用上，点击灯泡（有诊断标记时）或按 `Ctrl + .`，可以：注释 / 取消注释此调用、删除此调用、注释或删除本文件所有 console 调用。
+
 ## Console 侧边栏
 
-点击活动栏上的 **Easy Console Log** 图标打开侧边栏，按级别分组列出当前文件中所有 `console.log / debug / info / warn / error` 调用：
+点击活动栏上的 **Easy Console Log** 图标打开侧边栏，包含两个视图，级别筛选对两个视图同时生效。
+
+**Console 列表**（当前文件）：按级别分组列出当前文件中所有 `console.log / info / debug / warn / error / trace` 调用。
 
 - 点击列表项跳转到对应代码行。
-- 右键单条日志可**切换注释**、**删除日志**、**复制文本**。
+- 单条日志右侧按钮：**切换注释**、**删除日志**、**复制文本**。
 - 顶部工具栏：**注释全部**、**取消注释全部**、**删除全部**、**筛选级别**（勾选要显示的级别）、**刷新**。
 - 视图描述栏会显示各级别数量统计（如 `log: 3  warn: 1`）。
 - 切换编辑器或修改文档时列表自动刷新。
+
+**工作区**：按文件分组列出整个工作区的 console 调用（默认折叠，首次展开时才扫描）。
+
+- 编辑文件、文件在磁盘上变化（如切换分支）时增量更新对应文件。
+- 顶部工具栏：工作区**注释全部**、**取消注释全部**、**删除全部**，以及**筛选级别**、**重新扫描**。
+- 单条日志的按钮与当前文件视图一致。
 
 ## 生成的日志格式
 
@@ -75,6 +95,7 @@ console.log('🪵 ~ app.ts:2 ~ userName:', userName);
 | `easyConsoleLog.includeLineNumber` | `true` | 消息中是否包含行号 |
 | `easyConsoleLog.messageTemplate` | `${prefix} ~ ${location} ~ ${expr}:` | 消息模板，占位符：`${prefix}` `${file}` `${line}` `${location}` `${expr}` |
 | `easyConsoleLog.diagnostics.enabled` | `true` | 是否为未注释的 `console.*` 调用显示诊断提示（仅 JS/TS/Vue/Svelte） |
+| `easyConsoleLog.updateLineNumbersOnSave` | `false` | 保存时自动刷新生成日志中的文件名和行号 |
 | `easyConsoleLog.diagnostics.severity` | `hint` | 诊断提示级别（`error` / `warning` / `information` / `hint`）；`hint` 只显示淡色标记，不进入 Problems 面板 |
 
 **识别规则**：生成日志通过消息开头的固定文本识别，即模板中第一个非 `${prefix}` 占位符之前的部分（默认为 `🪵 ~ `）。调用函数可以是 `console.log/debug/info/warn/error` 或配置的 `logFunction`（如 `logger.info`）。
@@ -88,7 +109,9 @@ console.log('🪵 ~ app.ts:2 ~ userName:', userName);
 ```bash
 npm install
 npm run compile   # 或 npm run watch 持续编译
-npm run typecheck # 仅类型检查
+npm run typecheck # 类型检查（含测试代码）
+npm run lint      # ESLint
+npm test          # 单元测试（esbuild 打包后用 node:test 运行）
 ```
 
 在 VSCode 中打开本目录后按 `F5`，会启动一个加载了本扩展的 Extension Development Host 窗口，在里面打开任意 JS/TS 文件即可试用。

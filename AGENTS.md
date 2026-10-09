@@ -1,15 +1,23 @@
 # AGENTS.md
 
-## 常用命令
+## Commands
 
-- `npm run typecheck`：类型检查（`tsc --noEmit`）
-- `npm run esbuild-base -- --minify`：生产打包到 `out/extension.js`
-- `npm run vscode:prepublish`：发布前检查（typecheck + 打包）
-- 调试：VSCode 中按 `F5`（默认构建任务为 `npm run watch`）
+- `npm run typecheck`: type check (`src` + `test`)
+- `npm run lint`: ESLint (flat config in `eslint.config.mjs`, including `max-len: 120`)
+- `npm test`: unit tests (esbuild bundles `test/*.test.ts` into `out-test/`, then runs them with `node --test`)
+- `npm run esbuild-base -- --minify`: production bundle to `out/extension.js`
+- `npm run vscode:prepublish`: pre-publish check (typecheck + lint + test + bundle)
+- Debugging: press `F5` in VS Code (the default build task is `npm run watch`)
 
-## 架构约定
+## Architecture Conventions
 
-- `src/consoleScan.ts`、`src/logStatement.ts`、`src/astResolver.ts` 不依赖 `vscode`，可直接用 esbuild 打包后以 `node --test` 做单测。
-- 与 vscode API 交互的编辑适配放在 `src/editUtil.ts`。
-- `astResolver`（依赖 TypeScript 编译器）只能通过 `commands.ts` 中的 `loadAst()` 动态加载，不要静态 import，否则会拖慢扩展激活。
-- 单行最大 120 字符。
+- `consoleScan.ts`, `logStatement.ts`, `lineNumbers.ts` and `astResolver.ts` do not depend on `vscode` and are
+  covered directly by unit tests.
+- Editor adapters that talk to the vscode API live in `editUtil.ts`; workspace file discovery lives in
+  `workspaceScan.ts`.
+- `astResolver` (which depends on the TypeScript compiler) must only be loaded dynamically via `loadAst()` in
+  `commands.ts`. Do not import it statically, or extension activation will slow down.
+- Runtime messages use `vscode.l10n.t('English')`, with the Chinese translation added to
+  `l10n/bundle.l10n.zh-cn.json`; `test/l10n.test.ts` checks for missing or unused keys. Strings in
+  `package.json` go into `package.nls*.json`.
+- Maximum line length is 120 characters.

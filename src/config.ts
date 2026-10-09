@@ -19,6 +19,8 @@ export interface EclConfig {
   diagnosticsEnabled: boolean;
   /** 诊断提示的严重级别 */
   diagnosticsSeverity: 'error' | 'warning' | 'information' | 'hint';
+  /** 保存时是否自动刷新生成日志中的行号 */
+  updateLineNumbersOnSave: boolean;
 }
 
 export function getConfig(): EclConfig {
@@ -37,5 +39,6 @@ export function getConfig(): EclConfig {
       cfg.get<'error' | 'warning' | 'information' | 'hint'>(
         'diagnostics.severity'
       ) ?? 'hint',
+    updateLineNumbersOnSave: cfg.get<boolean>('updateLineNumbersOnSave') ?? false,
   };
 }

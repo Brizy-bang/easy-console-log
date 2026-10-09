@@ -3,6 +3,8 @@ import { getConfig } from './config';
 import { scanConsole } from './consoleScan';
 import { docLines, JS_LANGS } from './editUtil';
 
+export const DIAGNOSTIC_SOURCE = 'easy-console-log';
+
 const SEVERITY_MAP: Record<string, vscode.DiagnosticSeverity> = {
   error: vscode.DiagnosticSeverity.Error,
   warning: vscode.DiagnosticSeverity.Warning,
@@ -26,10 +28,10 @@ export function refreshDiagnostics(
     .map((b) => {
       const d = new vscode.Diagnostic(
         new vscode.Range(b.line, b.indentLen, b.endLine, b.endChar),
-        'Easy Console Log: console 调用',
+        vscode.l10n.t('console call'),
         severity
       );
-      d.source = 'easy-console-log';
+      d.source = DIAGNOSTIC_SOURCE;
       return d;
     });
   collection.set(doc.uri, diagnostics);

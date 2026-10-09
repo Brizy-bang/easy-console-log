@@ -5,7 +5,6 @@ import {
   commentTokenFor,
   LineEdit,
   LogBlock,
-  MODE_TEXT,
   splitLines,
 } from './consoleScan';
 
@@ -23,6 +22,7 @@ export const JS_LANGS = new Set([
 export interface EditSink {
   insert(pos: vscode.Position, text: string): void;
   delete(range: vscode.Range): void;
+  replace(range: vscode.Range, text: string): void;
 }
 
 export function docLines(doc: vscode.TextDocument): string[] {
@@ -33,8 +33,10 @@ export function applyLineEdits(sink: EditSink, edits: readonly LineEdit[]): void
   for (const e of edits) {
     if (e.kind === 'insert') {
       sink.insert(new vscode.Position(e.line, e.char), e.text);
-    } else {
+    } else if (e.kind === 'delete') {
       sink.delete(new vscode.Range(e.line, e.char, e.endLine, e.endChar));
+    } else {
+      sink.replace(new vscode.Range(e.line, e.char, e.endLine, e.endChar), e.text);
     }
   }
 }
@@ -43,7 +45,49 @@ export function workspaceSink(edit: vscode.WorkspaceEdit, uri: vscode.Uri): Edit
   return {
     insert: (pos, text) => edit.insert(uri, pos, text),
     delete: (range) => edit.delete(uri, range),
+    replace: (range, text) => edit.replace(uri, range, text),
   };
+}
+
+/** 转换为 TextEdit 数组（用于 onWillSaveTextDocument 等场景） */
+export function toTextEdits(edits: readonly LineEdit[]): vscode.TextEdit[] {
+  const out: vscode.TextEdit[] = [];
+  applyLineEdits(
+    {
+      insert: (pos, text) => out.push(vscode.TextEdit.insert(pos, text)),
+      delete: (range) => out.push(vscode.TextEdit.delete(range)),
+      replace: (range, text) => out.push(vscode.TextEdit.replace(range, text)),
+    },
+    edits
+  );
+  return out;
+}
+
+/** 批量操作的动词，用于拼接提示文案 */
+export function modeVerb(mode: BatchMode): string {
+  return mode === 'comment'
+    ? vscode.l10n.t('comment out')
+    : mode === 'uncomment'
+      ? vscode.l10n.t('uncomment')
+      : vscode.l10n.t('delete');
+}
+
+function skippedSuffix(skipped: number): string {
+  return skipped ? vscode.l10n.t(' ({0} skipped because they share a line with other code)', skipped) : '';
+}
+
+/** 批量操作结果提示；count 为 0 时提示"没有可处理的日志" */
+export function batchResultMessage(mode: BatchMode, count: number, skipped: number): string {
+  if (count === 0) {
+    return vscode.l10n.t('Easy Console Log: no logs to {0}', modeVerb(mode)) + skippedSuffix(skipped);
+  }
+  const done =
+    mode === 'comment'
+      ? vscode.l10n.t('Easy Console Log: commented out {0} log(s)', count)
+      : mode === 'uncomment'
+        ? vscode.l10n.t('Easy Console Log: uncommented {0} log(s)', count)
+        : vscode.l10n.t('Easy Console Log: deleted {0} log(s)', count);
+  return done + skippedSuffix(skipped);
 }
 
 /** 对当前编辑器执行一批块操作，并给出结果提示（notify=false 时只提示失败） */
@@ -56,16 +100,10 @@ export async function applyBatchToEditor(
 ): Promise<void> {
   const token = commentTokenFor(editor.document.fileName);
   const { edits, count, skipped } = batchEdits(lines, blocks, mode, token);
-  const text = MODE_TEXT[mode];
-  if (count === 0) {
-    const reason = skipped ? `（${skipped} 条与其他代码位于同一行，已跳过）` : '';
-    vscode.window.showInformationMessage(`Easy Console Log: 没有可${text}的日志${reason}`);
-    return;
+  if (count > 0) {
+    await editor.edit((builder) => applyLineEdits(builder, edits));
   }
-  await editor.edit((builder) => applyLineEdits(builder, edits));
-  if (!notify) {
-    return;
+  if (notify || count === 0) {
+    vscode.window.showInformationMessage(batchResultMessage(mode, count, skipped));
   }
-  const extra = skipped ? `，跳过 ${skipped} 条（与其他代码位于同一行）` : '';
-  vscode.window.showInformationMessage(`Easy Console Log: 已${text} ${count} 条日志${extra}`);
 }

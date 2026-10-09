@@ -8,3 +8,7 @@ tsconfig.json
 **/*.ts
 out/**
 !out/extension.js
+out-test/**
+test/**
+AGENTS.md
+eslint.config.mjs

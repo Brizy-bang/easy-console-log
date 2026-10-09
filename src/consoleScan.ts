@@ -7,12 +7,6 @@ import { generatedMarker, isPythonFile, logFunctionForFile, quoteFor, escapeForQ
 
 export type BatchMode = 'comment' | 'uncomment' | 'delete';
 
-export const MODE_TEXT: Record<BatchMode, string> = {
-  comment: '注释',
-  uncomment: '取消注释',
-  delete: '删除',
-};
-
 /** 单个调用块（可能跨多行） */
 export interface LogBlock {
   /** 起始行（0-based） */
@@ -38,7 +32,8 @@ export interface LogBlock {
 /** 与 vscode 无关的行级编辑 */
 export type LineEdit =
   | { kind: 'insert'; line: number; char: number; text: string }
-  | { kind: 'delete'; line: number; char: number; endLine: number; endChar: number };
+  | { kind: 'delete'; line: number; char: number; endLine: number; endChar: number }
+  | { kind: 'replace'; line: number; char: number; endLine: number; endChar: number; text: string };
 
 interface ScanOptions {
   /** 调用名正则片段（内部只能使用非捕获组） */
@@ -52,7 +47,10 @@ interface ScanOptions {
 /** 单个调用块最多跨越的行数，超过视为无法闭合 */
 const MAX_SPAN = 500;
 
-export const CONSOLE_NAMES = ['console\\.(?:log|debug|info|warn|error)'];
+/** 支持的 console 级别（均可接收"消息 + 值"形式的参数） */
+export const CONSOLE_LEVELS = ['log', 'info', 'debug', 'warn', 'error', 'trace'] as const;
+
+export const CONSOLE_NAMES = [`console\\.(?:${CONSOLE_LEVELS.join('|')})`];
 
 export function escapeRegExp(text: string): string {
   return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');

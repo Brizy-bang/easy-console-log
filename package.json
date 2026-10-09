@@ -2,7 +2,7 @@
   "name": "easy-console-log",
   "displayName": "Easy Console Log",
   "description": "%easyConsoleLog.description%",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "publisher": "Brizy-b",
   "license": "MIT",
   "repository": {
@@ -34,6 +34,14 @@
         "title": "%easyConsoleLog.command.insert%"
       },
       {
+        "command": "easyConsoleLog.insertWithLevel",
+        "title": "%easyConsoleLog.command.insertWithLevel%"
+      },
+      {
+        "command": "easyConsoleLog.updateLineNumbers",
+        "title": "%easyConsoleLog.command.updateLineNumbers%"
+      },
+      {
         "command": "easyConsoleLog.commentAll",
         "title": "%easyConsoleLog.command.commentAll%"
       },
@@ -51,15 +59,23 @@
       },
       {
         "command": "easyConsoleLog.workspace.commentAll",
-        "title": "%easyConsoleLog.command.workspace.commentAll%"
+        "title": "%easyConsoleLog.command.workspace.commentAll%",
+        "icon": "$(comment)"
       },
       {
         "command": "easyConsoleLog.workspace.uncommentAll",
-        "title": "%easyConsoleLog.command.workspace.uncommentAll%"
+        "title": "%easyConsoleLog.command.workspace.uncommentAll%",
+        "icon": "$(unfold)"
       },
       {
         "command": "easyConsoleLog.workspace.deleteAll",
-        "title": "%easyConsoleLog.command.workspace.deleteAll%"
+        "title": "%easyConsoleLog.command.workspace.deleteAll%",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "easyConsoleLog.workspace.refresh",
+        "title": "%easyConsoleLog.command.workspace.refresh%",
+        "icon": "$(refresh)"
       },
       {
         "command": "easyConsoleLog.explorer.commentAll",
@@ -143,6 +159,12 @@
           "id": "easyConsoleLog.explorer",
           "name": "%easyConsoleLog.view.explorer.title%",
           "icon": "images/icon.svg"
+        },
+        {
+          "id": "easyConsoleLog.workspace",
+          "name": "%easyConsoleLog.view.workspace.title%",
+          "icon": "images/icon.svg",
+          "visibility": "collapsed"
         }
       ]
     },
@@ -172,22 +194,47 @@
           "command": "easyConsoleLog.explorer.refresh",
           "when": "view == easyConsoleLog.explorer",
           "group": "navigation@5"
+        },
+        {
+          "command": "easyConsoleLog.workspace.commentAll",
+          "when": "view == easyConsoleLog.workspace",
+          "group": "navigation@1"
+        },
+        {
+          "command": "easyConsoleLog.workspace.uncommentAll",
+          "when": "view == easyConsoleLog.workspace",
+          "group": "navigation@2"
+        },
+        {
+          "command": "easyConsoleLog.workspace.deleteAll",
+          "when": "view == easyConsoleLog.workspace",
+          "group": "navigation@3"
+        },
+        {
+          "command": "easyConsoleLog.explorer.filter",
+          "when": "view == easyConsoleLog.workspace",
+          "group": "navigation@4"
+        },
+        {
+          "command": "easyConsoleLog.workspace.refresh",
+          "when": "view == easyConsoleLog.workspace",
+          "group": "navigation@5"
         }
       ],
       "view/item/context": [
         {
           "command": "easyConsoleLog.explorer.toggleItem",
-          "when": "view == easyConsoleLog.explorer && viewItem =~ /^logItem/",
+          "when": "view =~ /^easyConsoleLog\\.(explorer|workspace)$/ && viewItem =~ /^logItem/",
           "group": "inline@1"
         },
         {
           "command": "easyConsoleLog.explorer.deleteItem",
-          "when": "view == easyConsoleLog.explorer && viewItem =~ /^logItem/",
+          "when": "view =~ /^easyConsoleLog\\.(explorer|workspace)$/ && viewItem =~ /^logItem/",
           "group": "inline@2"
         },
         {
           "command": "easyConsoleLog.explorer.copyText",
-          "when": "view == easyConsoleLog.explorer && viewItem =~ /^logItem/",
+          "when": "view =~ /^easyConsoleLog\\.(explorer|workspace)$/ && viewItem =~ /^logItem/",
           "group": "inline@3"
         }
       ],
@@ -202,6 +249,10 @@
         },
         {
           "command": "easyConsoleLog.explorer.copyText",
+          "when": "false"
+        },
+        {
+          "command": "easyConsoleLog.workspace.refresh",
           "when": "false"
         }
       ]
@@ -296,23 +347,33 @@
           ],
           "default": "hint",
           "description": "%easyConsoleLog.diagnostics.severity.description%"
+        },
+        "easyConsoleLog.updateLineNumbersOnSave": {
+          "type": "boolean",
+          "default": false,
+          "description": "%easyConsoleLog.updateLineNumbersOnSave.description%"
         }
       }
     }
   },
   "scripts": {
-    "vscode:prepublish": "npm run typecheck && npm run esbuild-base -- --minify",
+    "vscode:prepublish": "npm run typecheck && npm run lint && npm test && npm run esbuild-base -- --minify",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
-    "typecheck": "tsc -p ./ --noEmit",
+    "typecheck": "tsc -p ./ --noEmit && tsc -p ./test",
+    "test": "esbuild test/*.test.ts --bundle --platform=node --format=cjs --outdir=out-test --log-level=warning && node --test out-test/",
     "esbuild-base": "esbuild ./src/extension.ts --bundle --outfile=./out/extension.js --external:vscode --format=cjs --platform=node",
     "esbuild": "npm run esbuild-base -- --sourcemap",
-    "lint": "eslint src --ext ts"
+    "lint": "eslint src test"
   },
   "devDependencies": {
+    "@eslint/js": "10.0.1",
     "@types/node": "^20.11.0",
     "@types/vscode": "^1.85.0",
     "esbuild": "^0.24.0",
-    "typescript": "~5.5.4"
-  }
+    "eslint": "10.11.0",
+    "typescript": "~5.5.4",
+    "typescript-eslint": "8.70.1"
+  },
+  "l10n": "./l10n"
 }

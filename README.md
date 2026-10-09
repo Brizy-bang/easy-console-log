@@ -9,6 +9,8 @@ A VS Code extension that helps you manage `console.*` statements: insert context
 | Command | Keybinding (Win/Linux & Mac) | Description |
 | --- | --- | --- |
 | `Easy Console Log: Insert Log Statement` | `Ctrl + Alt + L` | Insert a log for the selected expression (or the variable under the cursor) on the appropriate line |
+| `Easy Console Log: Insert Log Statement with Level...` | — | Pick `log / info / debug / warn / error / trace` first; the last choice is listed first |
+| `Easy Console Log: Update Log Line Numbers` | — | Refresh the stale `file:line` in generated logs of the current file |
 | `Easy Console Log: Comment All Logs` | `Alt + Shift + C` | Comment out all generated logs in the current file |
 | `Easy Console Log: Uncomment All Logs` | `Alt + Shift + U` | Restore all commented logs |
 | `Easy Console Log: Delete All Logs` | `Alt + Shift + D` | Delete all generated logs in the current file (including commented ones) |
@@ -19,15 +21,33 @@ Selecting multiple identifiers separated by commas (e.g. `a, b, c`) generates `c
 
 All comment / uncomment / delete operations work on the **whole call**: a `console.log(...)` spanning multiple lines (e.g. wrapped by Prettier) is handled as a unit, so no half-broken code is left behind.
 
+To bind a key to a specific level, pass `args` to `easyConsoleLog.insert` in `keybindings.json`:
+
+```json
+{ "key": "ctrl+alt+w", "command": "easyConsoleLog.insert", "args": { "level": "warn" } }
+```
+
+### Quick Fix
+
+With the cursor on a console call, click the light bulb (when a diagnostic is shown) or press `Ctrl + .` to comment / uncomment or delete the call, or comment / delete all console calls in the file.
+
 ## Console Explorer Sidebar
 
-Open the **Easy Console Log** activity bar icon. The sidebar groups every `console.log / debug / info / warn / error` call in the current file by level:
+Open the **Easy Console Log** activity bar icon. The sidebar has two views; the level filter applies to both.
+
+**Consoles** (current file) groups every `console.log / info / debug / warn / error / trace` call in the current file by level:
 
 - Click an item to jump to the line.
-- Right-click a log item for **Toggle Comment** / **Delete Log** / **Copy Text**.
+- Inline item actions: **Toggle Comment** / **Delete Log** / **Copy Text**.
 - Toolbar buttons: **Comment All**, **Uncomment All**, **Delete All**, **Filter Levels** (pick which levels are shown), **Refresh**.
 - The view description shows the count of each level (e.g. `log: 3  warn: 1`).
 - The list refreshes automatically when you switch editors or change the document.
+
+**Workspace** groups the console calls of the whole workspace by file (collapsed by default; scanned on first expand):
+
+- Files are updated incrementally on edits and on disk changes (e.g. switching branches).
+- Toolbar buttons: workspace **Comment All**, **Uncomment All**, **Delete All**, plus **Filter Levels** and **Refresh**.
+- Item actions are the same as in the current-file view.
 
 ## Generated Log Format
 
@@ -75,6 +95,7 @@ Search for `easyConsoleLog` in VS Code settings:
 | `easyConsoleLog.includeLineNumber` | `true` | Include the line number in the message |
 | `easyConsoleLog.messageTemplate` | `${prefix} ~ ${location} ~ ${expr}:` | Message template; placeholders: `${prefix}` `${file}` `${line}` `${location}` `${expr}` |
 | `easyConsoleLog.diagnostics.enabled` | `true` | Show diagnostic markers on uncommented `console.*` calls (JS/TS/Vue/Svelte only) |
+| `easyConsoleLog.updateLineNumbersOnSave` | `false` | Update file names and line numbers in generated logs on save |
 | `easyConsoleLog.diagnostics.severity` | `hint` | Severity of the diagnostics (`error` / `warning` / `information` / `hint`); `hint` only shows a faint marker and stays out of the Problems panel |
 
 **How generated logs are recognized**: by the fixed text at the start of the message, i.e. the part of the template before the first placeholder other than `${prefix}` (`🪵 ~ ` by default). The call can be `console.log/debug/info/warn/error` or the configured `logFunction` (e.g. `logger.info`).
@@ -88,7 +109,9 @@ Type `ecl` (or `ecln` without semicolon) in JS/TS/Vue/Svelte files to expand a c
 ```bash
 npm install
 npm run compile   # or npm run watch for continuous compilation
-npm run typecheck # type check only
+npm run typecheck # type check (including tests)
+npm run lint      # ESLint
+npm test          # unit tests (bundled with esbuild, run with node:test)
 ```
 
 Open this folder in VS Code and press `F5` to launch an Extension Development Host window — open any JS/TS file there to try it out.

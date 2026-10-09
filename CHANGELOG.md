@@ -2,9 +2,26 @@
 
 All notable changes to the "Easy Console Log" extension are documented in this file.
 
-## [Unreleased]
+## [0.3.0] - 2026-10-09
 
 ### Added
+
+- **Update Log Line Numbers** command: refreshes the stale `file:line` part of generated logs in the current file,
+  keeping the logged expression text. Enable `easyConsoleLog.updateLineNumbersOnSave` to do it on every save.
+- **Quick Fix**: on a `console.*` diagnostic (or via `Ctrl + .` on any console call), comment / uncomment / delete
+  this call, or comment / delete all console calls in the file.
+- **Insert Log Statement with Level...** command: pick `log` / `info` / `debug` / `warn` / `error` / `trace` before
+  inserting; the last choice is listed first. `easyConsoleLog.insert` also accepts `{ "level": "warn" }` as
+  keybinding `args`.
+- **Workspace view** in the sidebar: all `console.*` calls in the workspace grouped by file, scanned on first expand
+  and updated incrementally on edits and file system changes. Toolbar: workspace Comment / Uncomment / Delete All,
+  Filter Levels, Refresh. Item actions are shared with the current-file view.
+- `console.trace` is recognized everywhere.
+- Localization: runtime messages use `vscode.l10n` with English as the source language and a Simplified Chinese
+  bundle (`l10n/bundle.l10n.zh-cn.json`).
+- Unit tests (`npm test`, esbuild + `node:test`) for scanning, statement building, line number updates, the AST
+  resolver and l10n key consistency.
+- ESLint 10 + typescript-eslint flat config (`npm run lint`), including `max-len: 120`.
 
 - **Multi-line call support**: comment / uncomment / delete now treat a `console.*` call spanning several lines
   (e.g. wrapped by Prettier) as one unit, so no half-commented code is left behind.
@@ -38,7 +55,9 @@ All notable changes to the "Easy Console Log" extension are documented in this f
 - Snippets now use the full file name (`TM_FILENAME`) to match generated logs.
 - Sidebar scans the document once per refresh and debounces refreshes while typing.
 - Scanning and edit computation in `consoleScan` no longer depend on the `vscode` API; editor adapters moved to
-  the new `editUtil` module.
+  the new `editUtil` module. Workspace file discovery moved to the new `workspaceScan` module.
+- The level filter applies to both sidebar views.
+- `vscode:prepublish` runs typecheck, lint and tests before bundling.
 
 ### Fixed
 

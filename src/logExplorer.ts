@@ -1,16 +1,35 @@
+import * as path from 'path';
 import * as vscode from 'vscode';
-import { BatchMode, LogBlock, scanConsole } from './consoleScan';
+import { BatchMode, CONSOLE_LEVELS, LogBlock, scanConsole } from './consoleScan';
 import { applyBatchToEditor, docLines, JS_LANGS } from './editUtil';
+import { isScannable, readLines, scanWorkspace, WORKSPACE_GLOB } from './workspaceScan';
 
-const ALL_LEVELS = ['log', 'debug', 'info', 'warn', 'error'] as const;
+export const CURRENT_VIEW_ID = 'easyConsoleLog.explorer';
+export const WORKSPACE_VIEW_ID = 'easyConsoleLog.workspace';
 
-type TreeNode = LogGroupItem | LogItem;
+/** 两个视图共享的级别筛选 */
+class LevelFilter {
+  private levels = new Set<string>(CONSOLE_LEVELS);
+  private emitter = new vscode.EventEmitter<void>();
+  readonly onDidChange = this.emitter.event;
 
-/** 日志级别分组节点 */
+  has(level: string): boolean {
+    return this.levels.has(level);
+  }
+
+  set(levels: Iterable<string>): void {
+    this.levels = new Set(levels);
+    this.emitter.fire();
+  }
+}
+
+export const levelFilter = new LevelFilter();
+
+/** 日志级别分组节点（当前文件视图） */
 class LogGroupItem extends vscode.TreeItem {
   constructor(
     public readonly level: string,
-    public readonly count: number
+    count: number
   ) {
     super(`console.${level} (${count})`, vscode.TreeItemCollapsibleState.Expanded);
     this.contextValue = 'logGroup';
@@ -20,71 +39,75 @@ class LogGroupItem extends vscode.TreeItem {
   }
 }
 
+/** 文件节点（工作区视图） */
+class FileItem extends vscode.TreeItem {
+  constructor(
+    public readonly uri: vscode.Uri,
+    public readonly blocks: LogBlock[]
+  ) {
+    super(path.basename(uri.fsPath), vscode.TreeItemCollapsibleState.Collapsed);
+    const rel = vscode.workspace.asRelativePath(uri);
+    const dir = path.dirname(rel);
+    this.description = dir === '.' ? `${blocks.length}` : `${blocks.length} · ${dir}`;
+    this.tooltip = rel;
+    this.resourceUri = uri;
+    this.iconPath = vscode.ThemeIcon.File;
+    this.contextValue = 'logFile';
+  }
+}
+
 /** 单条日志节点 */
 export class LogItem extends vscode.TreeItem {
   constructor(
-    public readonly doc: vscode.TextDocument,
+    public readonly uri: vscode.Uri,
     public readonly info: LogBlock
   ) {
     super(`${info.line + 1}: ${info.body}`, vscode.TreeItemCollapsibleState.None);
     this.tooltip = info.body;
-    this.description = info.commented ? '已注释' : '';
+    this.description = info.commented ? vscode.l10n.t('commented') : '';
     this.iconPath = info.commented
       ? new vscode.ThemeIcon('debug-breakpoint-log-unverified')
       : new vscode.ThemeIcon('debug-console');
     this.contextValue = info.commented ? 'logItem.commented' : 'logItem';
     this.command = {
       command: 'easyConsoleLog.explorer.revealLine',
-      title: '定位到日志行',
-      arguments: [doc.uri, info.line],
+      title: vscode.l10n.t('Go to Log'),
+      arguments: [uri, info.line],
     };
   }
 }
 
-/** 当前活动文档中可展示的 console 调用（不支持的语言返回 undefined） */
-function scanActive(): { doc: vscode.TextDocument; blocks: LogBlock[] } | undefined {
-  const doc = vscode.window.activeTextEditor?.document;
-  if (!doc || !JS_LANGS.has(doc.languageId)) {
-    return undefined;
-  }
-  return { doc, blocks: scanConsole(docLines(doc), doc.fileName) };
-}
+type CurrentNode = LogGroupItem | LogItem;
 
-/** 侧边栏 Console 树数据提供者 */
-export class ConsoleLogExplorerProvider implements vscode.TreeDataProvider<TreeNode> {
-  private _onDidChangeTreeData = new vscode.EventEmitter<TreeNode | void>();
-  readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
-
-  private enabledLevels = new Set<string>(ALL_LEVELS);
+/** 当前文件视图：按级别分组列出活动编辑器中的 console 调用 */
+export class ConsoleLogExplorerProvider implements vscode.TreeDataProvider<CurrentNode>, vscode.Disposable {
+  private emitter = new vscode.EventEmitter<CurrentNode | void>();
+  readonly onDidChangeTreeData = this.emitter.event;
   /** 每次 refresh 扫描一次，供 getChildren 复用 */
-  private snapshot: ReturnType<typeof scanActive>;
-  private view: vscode.TreeView<TreeNode> | undefined;
-
-  get levels(): Set<string> {
-    return this.enabledLevels;
-  }
+  private snapshot: { uri: vscode.Uri; blocks: LogBlock[] } | undefined;
+  private view: vscode.TreeView<CurrentNode> | undefined;
+  private subscription = levelFilter.onDidChange(() => this.emitter.fire());
 
   /** 绑定 TreeView，用于在刷新时更新描述栏统计 */
-  attach(view: vscode.TreeView<TreeNode>): void {
+  attach(view: vscode.TreeView<CurrentNode>): void {
     this.view = view;
   }
 
   refresh(): void {
-    this.snapshot = scanActive();
+    const doc = vscode.window.activeTextEditor?.document;
+    this.snapshot =
+      doc && JS_LANGS.has(doc.languageId)
+        ? { uri: doc.uri, blocks: scanConsole(docLines(doc), doc.fileName) }
+        : undefined;
     if (this.view) {
       const groups = this.countByLevel();
       this.view.description = !this.snapshot
         ? ''
         : groups.size
           ? [...groups.entries()].map(([k, v]) => `${k}: ${v}`).join('  ')
-          : '无 console';
+          : vscode.l10n.t('no console calls');
     }
-    this._onDidChangeTreeData.fire();
-  }
-
-  setLevels(levels: Set<string>): void {
-    this.enabledLevels = levels;
-    this._onDidChangeTreeData.fire();
+    this.emitter.fire();
   }
 
   private countByLevel(): Map<string, number> {
@@ -95,85 +118,217 @@ export class ConsoleLogExplorerProvider implements vscode.TreeDataProvider<TreeN
     return groups;
   }
 
-  getTreeItem(element: TreeNode): vscode.TreeItem {
+  getTreeItem(element: CurrentNode): vscode.TreeItem {
     return element;
   }
 
-  getChildren(element?: TreeNode): TreeNode[] {
+  getChildren(element?: CurrentNode): CurrentNode[] {
     const snap = this.snapshot;
     if (!snap) {
       return [];
     }
     if (!element) {
       return [...this.countByLevel().entries()]
-        .filter(([level]) => this.enabledLevels.has(level))
+        .filter(([level]) => levelFilter.has(level))
         .map(([level, count]) => new LogGroupItem(level, count));
     }
     if (element instanceof LogGroupItem) {
-      return snap.blocks
-        .filter((b) => b.level === element.level)
-        .map((b) => new LogItem(snap.doc, b));
+      return snap.blocks.filter((b) => b.level === element.level).map((b) => new LogItem(snap.uri, b));
     }
     return [];
   }
+
+  dispose(): void {
+    this.subscription.dispose();
+    this.emitter.dispose();
+  }
 }
 
-/** 打开级别筛选 QuickPick */
-export async function filterLevels(provider: ConsoleLogExplorerProvider): Promise<void> {
-  const items = ALL_LEVELS.map((level) => ({
+type WorkspaceNode = FileItem | LogItem;
+
+/**
+ * 工作区视图：按文件分组列出工作区内所有 console 调用。
+ * 首次展开时才扫描；之后根据编辑与文件系统变化增量更新单个文件。
+ */
+export class WorkspaceLogProvider implements vscode.TreeDataProvider<WorkspaceNode>, vscode.Disposable {
+  private emitter = new vscode.EventEmitter<WorkspaceNode | void>();
+  readonly onDidChangeTreeData = this.emitter.event;
+  private files: Map<string, { uri: vscode.Uri; blocks: LogBlock[] }> | undefined;
+  private loading: Promise<void> | undefined;
+  private view: vscode.TreeView<WorkspaceNode> | undefined;
+  private watcher: vscode.FileSystemWatcher | undefined;
+  private timers = new Map<string, NodeJS.Timeout>();
+  private disposables: vscode.Disposable[] = [levelFilter.onDidChange(() => this.changed())];
+
+  attach(view: vscode.TreeView<WorkspaceNode>): void {
+    this.view = view;
+  }
+
+  /** 丢弃缓存，下次展开时重新扫描 */
+  refresh(): void {
+    this.files = undefined;
+    this.loading = undefined;
+    this.emitter.fire();
+  }
+
+  private load(): Promise<void> {
+    this.loading ??= Promise.resolve(
+      vscode.window.withProgress({ location: { viewId: WORKSPACE_VIEW_ID } }, async () => {
+        const scanned = await scanWorkspace((uri, lines) => {
+          const blocks = scanConsole(lines, uri.path);
+          return blocks.length ? { uri, blocks } : undefined;
+        });
+        this.files = new Map((scanned ?? []).map((f) => [f.uri.toString(), f]));
+        this.ensureWatcher();
+        this.updateDescription();
+      })
+    );
+    return this.loading;
+  }
+
+  private ensureWatcher(): void {
+    if (this.watcher) {
+      return;
+    }
+    this.watcher = vscode.workspace.createFileSystemWatcher(WORKSPACE_GLOB);
+    const fromDisk = (uri: vscode.Uri) => this.schedule(uri, () => readLines(uri));
+    this.disposables.push(
+      this.watcher,
+      this.watcher.onDidCreate(fromDisk),
+      this.watcher.onDidChange(fromDisk),
+      this.watcher.onDidDelete((uri) => this.setFile(uri, undefined))
+    );
+  }
+
+  /** 编辑器中的文档内容变化 */
+  onDocumentChanged(doc: vscode.TextDocument): void {
+    if (JS_LANGS.has(doc.languageId)) {
+      this.schedule(doc.uri, async () => docLines(doc));
+    }
+  }
+
+  /** 按文件防抖地重新扫描 */
+  private schedule(uri: vscode.Uri, read: () => Promise<string[] | undefined>): void {
+    if (!this.files || !isScannable(uri)) {
+      return;
+    }
+    const key = uri.toString();
+    clearTimeout(this.timers.get(key));
+    this.timers.set(
+      key,
+      setTimeout(async () => {
+        this.timers.delete(key);
+        this.setFile(uri, await read());
+      }, 500)
+    );
+  }
+
+  private setFile(uri: vscode.Uri, lines: string[] | undefined): void {
+    if (!this.files) {
+      return;
+    }
+    const blocks = lines ? scanConsole(lines, uri.path) : [];
+    if (blocks.length) {
+      this.files.set(uri.toString(), { uri, blocks });
+    } else if (!this.files.delete(uri.toString())) {
+      return;
+    }
+    this.changed();
+  }
+
+  private changed(): void {
+    this.updateDescription();
+    this.emitter.fire();
+  }
+
+  private visibleFiles(): { uri: vscode.Uri; blocks: LogBlock[] }[] {
+    return [...(this.files?.values() ?? [])]
+      .map((f) => ({ uri: f.uri, blocks: f.blocks.filter((b) => levelFilter.has(b.level)) }))
+      .filter((f) => f.blocks.length > 0)
+      .sort((a, b) => a.uri.path.localeCompare(b.uri.path));
+  }
+
+  private updateDescription(): void {
+    if (!this.view || !this.files) {
+      return;
+    }
+    const files = this.visibleFiles();
+    const total = files.reduce((n, f) => n + f.blocks.length, 0);
+    this.view.description = vscode.l10n.t('{0} in {1} file(s)', total, files.length);
+  }
+
+  getTreeItem(element: WorkspaceNode): vscode.TreeItem {
+    return element;
+  }
+
+  async getChildren(element?: WorkspaceNode): Promise<WorkspaceNode[]> {
+    if (!element) {
+      await this.load();
+      return this.visibleFiles().map((f) => new FileItem(f.uri, f.blocks));
+    }
+    if (element instanceof FileItem) {
+      return element.blocks.map((b) => new LogItem(element.uri, b));
+    }
+    return [];
+  }
+
+  dispose(): void {
+    this.timers.forEach((t) => clearTimeout(t));
+    this.disposables.forEach((d) => d.dispose());
+    this.emitter.dispose();
+  }
+}
+
+/** 打开级别筛选 QuickPick（同时作用于两个视图） */
+export async function filterLevels(): Promise<void> {
+  const items = CONSOLE_LEVELS.map((level) => ({
     label: `console.${level}`,
     level,
-    picked: provider.levels.has(level),
+    picked: levelFilter.has(level),
   }));
   const picked = await vscode.window.showQuickPick(items, {
     canPickMany: true,
-    title: '选择要显示的 console 级别',
-    placeHolder: '勾选需要展示的级别',
+    title: vscode.l10n.t('Select console levels to show'),
   });
   if (picked) {
-    provider.setLevels(new Set(picked.map((p) => p.level)));
+    levelFilter.set(picked.map((p) => p.level));
   }
 }
 
 /** 跳转到指定日志行 */
 export async function revealLine(uri: vscode.Uri, line: number): Promise<void> {
-  const doc = await vscode.workspace.openTextDocument(uri);
-  const editor = await vscode.window.showTextDocument(doc);
+  const editor = await vscode.window.showTextDocument(uri);
   const pos = new vscode.Position(line, 0);
   editor.selection = new vscode.Selection(pos, pos);
   editor.revealRange(
-    new vscode.Range(pos, new vscode.Position(line, doc.lineAt(line).text.length)),
+    new vscode.Range(pos, editor.document.lineAt(line).range.end),
     vscode.TextEditorRevealType.InCenterIfOutsideViewport
   );
 }
 
-/** 对单条日志执行操作；树节点可能已过期，先按当前内容重新定位 */
-async function applyToItem(
-  provider: ConsoleLogExplorerProvider,
-  item: LogItem,
-  mode: (b: LogBlock) => BatchMode
-): Promise<void> {
-  const editor = await vscode.window.showTextDocument(item.doc);
-  const lines = docLines(item.doc);
-  const current = scanConsole(lines, item.doc.fileName).find(
+/** 对单条日志执行操作；树节点可能已过期，先按当前内容重新定位，失败时调用 onStale */
+async function applyToItem(item: LogItem, mode: (b: LogBlock) => BatchMode, onStale: () => void): Promise<void> {
+  const editor = await vscode.window.showTextDocument(item.uri, { preserveFocus: true });
+  const lines = docLines(editor.document);
+  const current = scanConsole(lines, editor.document.fileName).find(
     (b) => b.line === item.info.line && b.body === item.info.body
   );
   if (!current) {
-    provider.refresh();
-    vscode.window.showInformationMessage('Easy Console Log: 日志内容已变化，列表已刷新');
+    onStale();
+    vscode.window.showInformationMessage(vscode.l10n.t('Easy Console Log: the log has changed, list refreshed'));
     return;
   }
   await applyBatchToEditor(editor, lines, [current], mode(current), false);
 }
 
 /** 切换单条日志的注释状态 */
-export function toggleLogItem(provider: ConsoleLogExplorerProvider, item: LogItem): Promise<void> {
-  return applyToItem(provider, item, (b) => (b.commented ? 'uncomment' : 'comment'));
+export function toggleLogItem(item: LogItem, onStale: () => void): Promise<void> {
+  return applyToItem(item, (b) => (b.commented ? 'uncomment' : 'comment'), onStale);
 }
 
 /** 删除单条日志 */
-export function deleteLogItem(provider: ConsoleLogExplorerProvider, item: LogItem): Promise<void> {
-  return applyToItem(provider, item, () => 'delete');
+export function deleteLogItem(item: LogItem, onStale: () => void): Promise<void> {
+  return applyToItem(item, () => 'delete', onStale);
 }
 
 /** 复制日志文本 */

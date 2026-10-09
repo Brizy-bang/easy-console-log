@@ -8,15 +8,25 @@ import {
   BatchMode,
   blockAtLine,
   commentTokenFor,
+  CONSOLE_LEVELS,
   isApplicable,
   LineEdit,
   LogBlock,
-  MODE_TEXT,
   scanConsole,
   scanGenerated,
-  splitLines,
 } from './consoleScan';
-import { applyBatchToEditor, applyLineEdits, docLines, workspaceSink } from './editUtil';
+import {
+  applyBatchToEditor,
+  applyLineEdits,
+  batchResultMessage,
+  docLines,
+  JS_LANGS,
+  modeVerb,
+  toTextEdits,
+  workspaceSink,
+} from './editUtil';
+import { lineNumberEdits } from './lineNumbers';
+import { scanWorkspace } from './workspaceScan';
 
 type AstModule = typeof import('./astResolver');
 let astModule: Promise<AstModule> | undefined;
@@ -44,9 +54,14 @@ const AST_FILE_RE = /\.([cm]?[jt]sx?|vue|svelte)$/i;
 const SFC_FILE_RE = /\.(vue|svelte)$/i;
 const SCRIPT_RE = /<script\b([^>]*)>([\s\S]*?)<\/script>/gi;
 
-const MARKER_WARNING =
-  'Easy Console Log: 无法识别本扩展生成的日志。' +
-  '请确认 logMessagePrefix 不为空，且 messageTemplate 以固定文本或 ${prefix} 开头';
+function showMarkerWarning(): void {
+  vscode.window.showWarningMessage(
+    vscode.l10n.t(
+      'Easy Console Log: cannot recognize generated logs. Make sure logMessagePrefix is not empty ' +
+        'and messageTemplate starts with fixed text or ${prefix}'
+    )
+  );
+}
 
 /** 按顶层逗号拆分表达式，忽略括号/引号内的逗号 */
 function splitTopLevelCommas(expr: string): string[] {
@@ -110,7 +125,7 @@ async function buildResolver(doc: vscode.TextDocument): Promise<DocResolver | un
     resolve(offset): ResolveResult {
       const b = find(offset);
       if (!b) {
-        return { ok: false, reason: '不在 <script> 块内', skip: true };
+        return { ok: false, reason: ast.REASON.outsideScript, skip: true };
       }
       const r = b.resolver.resolve(offset - b.start);
       if (!r.ok) {
@@ -180,16 +195,26 @@ interface Target {
   indent: string;
 }
 
-/** 为选中/光标下的表达式插入日志语句 */
-export async function insertLog(): Promise<void> {
+export type ConsoleLevel = (typeof CONSOLE_LEVELS)[number];
+
+/** 命令参数，可在 keybindings.json 中通过 args 传入，如 { "level": "warn" } */
+export interface InsertArgs {
+  level?: ConsoleLevel;
+}
+
+const isLevel = (v: unknown): v is ConsoleLevel => CONSOLE_LEVELS.includes(v as ConsoleLevel);
+
+/** 为选中/光标下的表达式插入日志语句；指定 level 时使用 console.<level>（Python 中忽略） */
+export async function insertLog(args?: InsertArgs): Promise<void> {
   const editor = vscode.window.activeTextEditor;
   if (!editor) {
     return;
   }
   const doc = editor.document;
-  const cfg = getConfig();
-  const fileName = path.basename(doc.fileName);
   const py = isPythonFile(doc.fileName);
+  const level = args?.level;
+  const cfg = { ...getConfig(), ...(isLevel(level) && !py ? { logFunction: `console.${level}` } : {}) };
+  const fileName = path.basename(doc.fileName);
 
   const resolver = await buildResolver(doc);
   const indentUnit = editor.options.insertSpaces
@@ -249,9 +274,13 @@ export async function insertLog(): Promise<void> {
     }
   }
 
+  const reasons = [...skippedReasons].map((r) => vscode.l10n.t(r)).join(vscode.l10n.t(', '));
   if (targets.length === 0) {
-    const detail = skippedReasons.size ? `（${[...skippedReasons].join('、')}）` : '';
-    vscode.window.showWarningMessage(`Easy Console Log: 未找到可输出的变量或表达式${detail}`);
+    vscode.window.showWarningMessage(
+      reasons
+        ? vscode.l10n.t('Easy Console Log: no variable or expression to log ({0})', reasons)
+        : vscode.l10n.t('Easy Console Log: no variable or expression to log')
+    );
     return;
   }
 
@@ -276,11 +305,68 @@ export async function insertLog(): Promise<void> {
     });
   });
 
-  if (skippedReasons.size) {
-    vscode.window.showWarningMessage(
-      `Easy Console Log: 已跳过部分位置（${[...skippedReasons].join('、')}）`
-    );
+  if (reasons) {
+    vscode.window.showWarningMessage(vscode.l10n.t('Easy Console Log: some positions were skipped ({0})', reasons));
   }
+}
+
+let lastLevel: ConsoleLevel = 'log';
+
+/** 先选择 console 级别再插入日志；上次选择的级别排在最前 */
+export async function insertLogWithLevel(): Promise<void> {
+  const doc = vscode.window.activeTextEditor?.document;
+  if (!doc) {
+    return;
+  }
+  if (isPythonFile(doc.fileName)) {
+    return insertLog();
+  }
+  const levels = [lastLevel, ...CONSOLE_LEVELS.filter((l) => l !== lastLevel)];
+  const picked = await vscode.window.showQuickPick(
+    levels.map((level) => ({ label: `console.${level}`, level })),
+    { title: vscode.l10n.t('Select the console level to insert') }
+  );
+  if (picked) {
+    lastLevel = picked.level;
+    await insertLog({ level: picked.level });
+  }
+}
+
+/** 刷新当前文件中生成日志的文件名与行号 */
+export async function updateLineNumbers(): Promise<void> {
+  const editor = vscode.window.activeTextEditor;
+  if (!editor) {
+    return;
+  }
+  const doc = editor.document;
+  const r = lineNumberEdits(docLines(doc), path.basename(doc.fileName), getConfig());
+  if (!r) {
+    showMarkerWarning();
+    return;
+  }
+  if (r.count === 0) {
+    vscode.window.showInformationMessage(vscode.l10n.t('Easy Console Log: line numbers are already up to date'));
+    return;
+  }
+  await editor.edit((builder) => applyLineEdits(builder, r.edits));
+  vscode.window.showInformationMessage(vscode.l10n.t('Easy Console Log: updated {0} log(s)', r.count));
+}
+
+/** 保存时自动刷新行号（需开启 easyConsoleLog.updateLineNumbersOnSave） */
+export function registerLineNumbersOnSave(context: vscode.ExtensionContext): void {
+  context.subscriptions.push(
+    vscode.workspace.onWillSaveTextDocument((e) => {
+      const cfg = getConfig();
+      const doc = e.document;
+      if (!cfg.updateLineNumbersOnSave || !(JS_LANGS.has(doc.languageId) || doc.languageId === 'python')) {
+        return;
+      }
+      const r = lineNumberEdits(docLines(doc), path.basename(doc.fileName), cfg);
+      if (r?.count) {
+        e.waitUntil(Promise.resolve(toTextEdits(r.edits)));
+      }
+    })
+  );
 }
 
 /** 对当前文件中由本扩展生成的日志执行批量操作 */
@@ -292,7 +378,7 @@ async function runOnGenerated(mode: BatchMode): Promise<void> {
   const lines = docLines(editor.document);
   const blocks = scanGenerated(lines, editor.document.fileName, getConfig());
   if (!blocks) {
-    vscode.window.showWarningMessage(MARKER_WARNING);
+    showMarkerWarning();
     return;
   }
   await applyBatchToEditor(editor, lines, blocks, mode);
@@ -332,7 +418,7 @@ export async function toggleCurrentLog(): Promise<void> {
     }
   }
   if (picked.size === 0) {
-    vscode.window.showInformationMessage('Easy Console Log: 当前行不是 console 调用');
+    vscode.window.showInformationMessage(vscode.l10n.t('Easy Console Log: the current line is not a console call'));
     return;
   }
   const token = commentTokenFor(doc.fileName);
@@ -348,16 +434,10 @@ export async function toggleCurrentLog(): Promise<void> {
   }
   if (skipped) {
     vscode.window.showWarningMessage(
-      `Easy Console Log: ${skipped} 条日志与其他代码位于同一行，无法按行注释`
+      vscode.l10n.t('Easy Console Log: {0} log(s) share a line with other code and cannot be commented out', skipped)
     );
   }
 }
-
-const WORKSPACE_GLOB = '**/*.{js,ts,jsx,tsx,mjs,cjs,mts,cts,vue,svelte}';
-const EXCLUDE_GLOB =
-  '**/{node_modules,dist,out,build,.git,vendor,coverage,.next,.nuxt,.output,.svelte-kit}/**';
-/** 含超长行的文件视为压缩/打包产物，整文件跳过，避免整行删除毁掉文件 */
-const MAX_LINE_LEN = 3000;
 
 interface FileHits {
   uri: vscode.Uri;
@@ -368,63 +448,36 @@ interface FileHits {
   generated: LogBlock[];
 }
 
-/** 读取文件内容；已打开的文档以编辑器中的内容为准（可能有未保存修改） */
-async function readLines(uri: vscode.Uri): Promise<string[]> {
-  const open = vscode.workspace.textDocuments.find((d) => d.uri.toString() === uri.toString());
-  if (open) {
-    return docLines(open);
-  }
-  return splitLines(new TextDecoder().decode(await vscode.workspace.fs.readFile(uri)));
-}
-
 /** 扫描工作区，返回有命中的文件；用户取消时返回 undefined */
-function scanWorkspace(mode: BatchMode): Thenable<FileHits[] | undefined> {
+function scanWorkspaceHits(mode: BatchMode): Thenable<FileHits[] | undefined> {
   const cfg = getConfig();
   return vscode.window.withProgress(
     {
       location: vscode.ProgressLocation.Notification,
-      title: 'Easy Console Log: 正在扫描工作区…',
+      title: vscode.l10n.t('Easy Console Log: scanning the workspace…'),
       cancellable: true,
     },
-    async (progress, token) => {
-      const files = await vscode.workspace.findFiles(WORKSPACE_GLOB, EXCLUDE_GLOB, undefined, token);
-      const hits: FileHits[] = [];
-      for (const uri of files) {
-        if (token.isCancellationRequested) {
-          return undefined;
-        }
-        progress.report({ increment: 100 / files.length });
-        if (/\.min\.[cm]?js$/i.test(uri.path)) {
-          continue;
-        }
-        let lines: string[];
-        try {
-          lines = await readLines(uri);
-        } catch {
-          continue;
-        }
-        if (lines.some((l) => l.length > MAX_LINE_LEN)) {
-          continue;
-        }
-        const all = scanConsole(lines, uri.path).filter((b) => isApplicable(b, mode));
-        // 前缀为空等无法识别的配置下，scanGenerated 返回 undefined，"仅生成的日志"选项不出现
-        const generated = (scanGenerated(lines, uri.path, cfg) ?? []).filter((b) => isApplicable(b, mode));
-        if (all.length || generated.length) {
-          hits.push({ uri, lines, all, generated });
-        }
-      }
-      return hits;
-    }
+    (progress, token) =>
+      scanWorkspace(
+        (uri, lines) => {
+          const all = scanConsole(lines, uri.path).filter((b) => isApplicable(b, mode));
+          // 前缀为空等无法识别的配置下，scanGenerated 返回 undefined，"仅生成的日志"选项不出现
+          const generated = (scanGenerated(lines, uri.path, cfg) ?? []).filter((b) => isApplicable(b, mode));
+          return all.length || generated.length ? { uri, lines, all, generated } : undefined;
+        },
+        token,
+        progress
+      )
   );
 }
 
 /** 对整个工作区执行批量操作，执行前让用户选择范围（仅生成的日志 / 所有 console.*） */
 async function batchOnWorkspace(mode: BatchMode): Promise<void> {
-  const hits = await scanWorkspace(mode);
+  const hits = await scanWorkspaceHits(mode);
   if (!hits) {
     return;
   }
-  const text = MODE_TEXT[mode];
+  const verb = modeVerb(mode);
   const sum = (pick: (h: FileHits) => LogBlock[]) => {
     const files = hits.filter((h) => pick(h).length > 0);
     return { files: files.length, logs: files.reduce((n, h) => n + pick(h).length, 0) };
@@ -432,19 +485,23 @@ async function batchOnWorkspace(mode: BatchMode): Promise<void> {
   const gen = sum((h) => h.generated);
   const all = sum((h) => h.all);
   if (gen.logs === 0 && all.logs === 0) {
-    vscode.window.showInformationMessage(`Easy Console Log: 工作区中没有可${text}的日志`);
+    vscode.window.showInformationMessage(vscode.l10n.t('Easy Console Log: no logs to {0} in the workspace', verb));
     return;
   }
 
-  const GEN = `仅本扩展生成的日志（${gen.logs}）`;
-  const ALL = `所有 console.*（${all.logs}）`;
+  const GEN = vscode.l10n.t('Generated logs only ({0})', gen.logs);
+  const ALL = vscode.l10n.t('All console.* ({0})', all.logs);
   const choice = await vscode.window.showWarningMessage(
-    `Easy Console Log: 即将在工作区中批量${text}日志`,
+    vscode.l10n.t('Easy Console Log: choose which logs to {0} in the workspace', verb),
     {
       modal: true,
-      detail:
-        `本扩展生成的日志：${gen.logs} 条 / ${gen.files} 个文件\n` +
-        `所有 console.* 调用：${all.logs} 条 / ${all.files} 个文件`,
+      detail: vscode.l10n.t(
+        'Generated logs: {0} in {1} file(s)\nAll console.* calls: {2} in {3} file(s)',
+        gen.logs,
+        gen.files,
+        all.logs,
+        all.files
+      ),
     },
     ...(gen.logs ? [GEN] : []),
     ...(all.logs ? [ALL] : [])
@@ -471,15 +528,15 @@ async function batchOnWorkspace(mode: BatchMode): Promise<void> {
       touched.add(h.uri.toString());
     }
   }
-  const extra = skipped ? `，跳过 ${skipped} 条（与其他代码位于同一行）` : '';
   if (total === 0) {
-    vscode.window.showInformationMessage(`Easy Console Log: 没有可${text}的日志${extra}`);
+    vscode.window.showInformationMessage(batchResultMessage(mode, 0, skipped));
     return;
   }
   await vscode.workspace.applyEdit(edit);
-  const SAVE = '保存这些文件';
+  const SAVE = vscode.l10n.t('Save These Files');
+  const result = batchResultMessage(mode, total, skipped);
   const action = await vscode.window.showInformationMessage(
-    `Easy Console Log: 已在 ${touched.size} 个文件中${text} ${total} 条日志${extra}，修改尚未保存`,
+    vscode.l10n.t('{0} in {1} file(s). Changes are not saved yet', result, touched.size),
     SAVE
   );
   if (action === SAVE) {

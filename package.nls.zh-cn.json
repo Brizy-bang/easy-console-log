@@ -1,6 +1,8 @@
 {
   "easyConsoleLog.description": "快速生成带文件和行号信息的 console.log 调试语句，支持一键注释/取消注释/删除所有日志",
   "easyConsoleLog.command.insert": "Easy Console Log: 插入日志语句",
+  "easyConsoleLog.command.insertWithLevel": "Easy Console Log: 插入指定级别的日志语句…",
+  "easyConsoleLog.command.updateLineNumbers": "Easy Console Log: 刷新日志行号",
   "easyConsoleLog.command.commentAll": "Easy Console Log: 注释所有日志",
   "easyConsoleLog.command.uncommentAll": "Easy Console Log: 取消注释所有日志",
   "easyConsoleLog.command.deleteAll": "Easy Console Log: 删除所有日志",
@@ -8,6 +10,7 @@
   "easyConsoleLog.command.workspace.commentAll": "Easy Console Log: 注释工作区所有日志",
   "easyConsoleLog.command.workspace.uncommentAll": "Easy Console Log: 取消注释工作区所有日志",
   "easyConsoleLog.command.workspace.deleteAll": "Easy Console Log: 删除工作区所有日志",
+  "easyConsoleLog.command.workspace.refresh": "刷新",
   "easyConsoleLog.command.explorer.commentAll": "注释全部",
   "easyConsoleLog.command.explorer.uncommentAll": "取消注释全部",
   "easyConsoleLog.command.explorer.deleteAll": "删除全部",
@@ -18,6 +21,7 @@
   "easyConsoleLog.command.explorer.copyText": "复制文本",
   "easyConsoleLog.view.container.title": "Easy Console Log",
   "easyConsoleLog.view.explorer.title": "Console 列表",
+  "easyConsoleLog.view.workspace.title": "工作区",
   "easyConsoleLog.configuration.title": "Easy Console Log",
   "easyConsoleLog.logMessagePrefix.description": "日志消息前缀标记，同时用于识别由本扩展生成的日志",
   "easyConsoleLog.quote.description": "日志消息使用的引号风格",
@@ -27,5 +31,6 @@
   "easyConsoleLog.includeLineNumber.description": "日志消息中是否包含行号",
   "easyConsoleLog.messageTemplate.description": "日志消息模板，占位符：${prefix} ${file} ${line} ${location} ${expr}",
   "easyConsoleLog.diagnostics.enabled.description": "是否为 console.* 行显示诊断提示",
-  "easyConsoleLog.diagnostics.severity.description": "console.* 诊断提示的严重级别"
+  "easyConsoleLog.diagnostics.severity.description": "console.* 诊断提示的严重级别",
+  "easyConsoleLog.updateLineNumbersOnSave.description": "保存时自动刷新生成日志中的文件名和行号"
 }

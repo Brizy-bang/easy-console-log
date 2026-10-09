@@ -45,6 +45,20 @@ export function generatedMarker(cfg: EclConfig): string | undefined {
   return marker.trim() ? marker : undefined;
 }
 
+/** 渲染日志消息（未转义），fileName 为不含目录的文件名 */
+export function renderMessage(expression: string, fileName: string, lineNumber: number, cfg: EclConfig): string {
+  const file = cfg.includeFilename ? fileName : '';
+  const line = cfg.includeLineNumber ? String(lineNumber) : '';
+  return renderTemplate(cfg.messageTemplate, {
+    prefix: cfg.prefix,
+    file,
+    line,
+    location: [file, line].filter(Boolean).join(':'),
+    // 多行表达式在消息中折叠为单行，否则普通字符串字面量会断开
+    expr: expression.replace(/\s+/g, ' ').trim(),
+  });
+}
+
 /**
  * 构建一条日志语句，例如：
  *   console.log('🪵 ~ app.ts:42 ~ userName:', userName);
@@ -56,16 +70,7 @@ export function buildLogStatement(
   indent: string,
   cfg: EclConfig
 ): string {
-  const file = cfg.includeFilename ? fileName : '';
-  const line = cfg.includeLineNumber ? String(lineNumber) : '';
-  const message = renderTemplate(cfg.messageTemplate, {
-    prefix: cfg.prefix,
-    file,
-    line,
-    location: [file, line].filter(Boolean).join(':'),
-    // 多行表达式在消息中折叠为单行，否则普通字符串字面量会断开
-    expr: expression.replace(/\s+/g, ' ').trim(),
-  });
+  const message = renderMessage(expression, fileName, lineNumber, cfg);
   const quote = quoteFor(fileName, cfg);
   const semi = cfg.semicolon && !isPythonFile(fileName) ? ';' : '';
   const fn = logFunctionForFile(fileName, cfg);
