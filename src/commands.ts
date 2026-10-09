@@ -1,4 +1,5 @@
 import * as path from 'path';
+import * as ts from 'typescript';
 import * as vscode from 'vscode';
 import {
   createInsertTargetResolver,
@@ -7,6 +8,7 @@ import {
 } from './astResolver';
 import { getConfig } from './config';
 import { buildLogStatement, logLineRegExp } from './logStatement';
+import { collectConsoleLines, CONSOLE_LINE_RE } from './consoleScan';
 
 /** 匹配成员表达式 / 链式访问，如 a.b.c、a['x']、this.state.list */
 const MEMBER_EXPR = /[$\w]+(?:\.[$\w]+|\[(?:\d+|["'`][^\]"'`]*["'`])\])*/;
@@ -18,6 +20,78 @@ function normalizeDeclarationExpr(expr: string): string | undefined {
     return expr;
   }
   return expr.slice(m[0].length).match(/[\w$]+/)?.[0];
+}
+
+/** 按顶层逗号拆分表达式，忽略括号/引号内的逗号 */
+function splitTopLevelCommas(expr: string): string[] {
+  const parts: string[] = [];
+  let depth = 0;
+  let start = 0;
+  let quote: string | undefined;
+  for (let i = 0; i < expr.length; i++) {
+    const c = expr[i];
+    if (quote) {
+      if (c === quote && expr[i - 1] !== '\\') {
+        quote = undefined;
+      }
+    } else if (c === '"' || c === "'" || c === '`') {
+      quote = c;
+    } else if (c === '(' || c === '[' || c === '{') {
+      depth++;
+    } else if (c === ')' || c === ']' || c === '}') {
+      depth--;
+    } else if (c === ',' && depth === 0) {
+      parts.push(expr.slice(start, i).trim());
+      start = i + 1;
+    }
+  }
+  parts.push(expr.slice(start).trim());
+  return parts.filter((p) => p.length > 0);
+}
+
+const IDENT_RE = /^[a-zA-Z_$][\w$]*$/;
+
+/** 提取 Vue/Svelte 的 <script> 块内容及其在文档中的偏移 */
+function extractScriptBlock(
+  doc: vscode.TextDocument
+): { text: string; offset: number; startLine: number } | undefined {
+  const m = doc.getText().match(/<script[^>]*>([\s\S]*?)<\/script>/i);
+  if (!m || m.index === undefined) {
+    return undefined;
+  }
+  const offset = m.index + m[0].indexOf('>') + 1;
+  return { text: m[1], offset, startLine: doc.positionAt(offset).line };
+}
+
+/** 构建针对当前文档的插入点解析器，支持 Vue/Svelte 的 <script> 块 */
+function buildResolver(
+  doc: vscode.TextDocument
+): ((offset: number) => ReturnType<ReturnType<typeof createInsertTargetResolver>>) | undefined {
+  const kind = scriptKindForFile(doc.fileName);
+  if (kind !== undefined) {
+    return createInsertTargetResolver(doc.getText(), doc.fileName, kind);
+  }
+  if (/\.(vue|svelte)$/i.test(doc.fileName)) {
+    const block = extractScriptBlock(doc);
+    if (block) {
+      const inner = createInsertTargetResolver(block.text, doc.fileName, ts.ScriptKind.TS);
+      return (offset) => {
+        const r = inner(offset - block.offset);
+        if (r.ok) {
+          return {
+            ok: true,
+            target: {
+              ...r.target,
+              anchorLine: r.target.anchorLine + block.startLine,
+              indentLine: r.target.indentLine + block.startLine,
+            },
+          };
+        }
+        return r;
+      };
+    }
+  }
+  return undefined;
 }
 
 interface Target {
@@ -41,11 +115,7 @@ export async function insertLog(): Promise<void> {
   const cfg = getConfig();
   const fileName = path.basename(doc.fileName);
 
-  const kind = scriptKindForFile(doc.fileName);
-  const resolver =
-    kind !== undefined
-      ? createInsertTargetResolver(doc.getText(), doc.fileName, kind)
-      : undefined;
+  const resolver = buildResolver(doc);
   const indentUnit = editor.options.insertSpaces
     ? ' '.repeat(Number(editor.options.tabSize) || 4)
     : '\t';
@@ -64,7 +134,15 @@ export async function insertLog(): Promise<void> {
     if (!sel.isEmpty) {
       const raw = doc.getText(sel);
       const leadingWs = raw.length - raw.trimStart().length;
-      expression = normalizeDeclarationExpr(raw.trim().replace(/;+\s*$/, ''));
+      let expr = normalizeDeclarationExpr(raw.trim().replace(/;+\s*$/, ''));
+      if (expr) {
+        const parts = splitTopLevelCommas(expr);
+        if (parts.length > 1 && parts.every((p) => IDENT_RE.test(p))) {
+          // 多个标识符 → console.log({a, b})
+          expr = `{${parts.join(', ')}}`;
+        }
+      }
+      expression = expr;
       probe = sel.start.translate(0, leadingWs);
       fallbackLine = sel.end.line;
       if (sel.end.character === 0 && sel.end.line > sel.start.line) {
@@ -236,4 +314,116 @@ export async function deleteAllLogs(): Promise<void> {
     }
   });
   vscode.window.showInformationMessage(`Easy Console Log: 已删除 ${targets.length} 条日志`);
+}
+
+/** 切换光标所在行 console 调用的注释状态 */
+export async function toggleCurrentLog(): Promise<void> {
+  const editor = vscode.window.activeTextEditor;
+  if (!editor) {
+    return;
+  }
+  const doc = editor.document;
+  const line = doc.lineAt(editor.selection.active.line);
+  const m = line.text.match(CONSOLE_LINE_RE);
+  if (!m) {
+    vscode.window.showInformationMessage('Easy Console Log: 当前行不是 console 调用');
+    return;
+  }
+  const commented = m[2] !== undefined;
+  await editor.edit((builder) => {
+    if (commented) {
+      builder.delete(
+        new vscode.Range(
+          line.lineNumber,
+          m[1].length,
+          line.lineNumber,
+          m[1].length + m[2].length
+        )
+      );
+    } else {
+      builder.insert(new vscode.Position(line.lineNumber, m[1].length), '// ');
+    }
+  });
+}
+
+const WORKSPACE_GLOB = '**/*.{js,ts,jsx,tsx,mjs,cjs,mts,cts,vue,svelte,py}';
+const EXCLUDE_GLOB = '**/{node_modules,dist,out,build,.git,vendor}/**';
+
+/** 对整个工作区执行 console.* 批量操作 */
+async function batchOnWorkspace(mode: 'comment' | 'uncomment' | 'delete') {
+  const files = await vscode.workspace.findFiles(WORKSPACE_GLOB, EXCLUDE_GLOB);
+  if (files.length === 0) {
+    vscode.window.showInformationMessage('Easy Console Log: 工作区中没有找到相关文件');
+    return;
+  }
+  const modeText =
+    mode === 'comment' ? '注释' : mode === 'uncomment' ? '取消注释' : '删除';
+  const confirm = await vscode.window.showWarningMessage(
+    `将在 ${files.length} 个文件中${modeText}所有 console.* 调用，确认继续？`,
+    { modal: true },
+    '确认'
+  );
+  if (confirm !== '确认') {
+    return;
+  }
+  const edit = new vscode.WorkspaceEdit();
+  let total = 0;
+  for (const uri of files) {
+    const doc = await vscode.workspace.openTextDocument(uri);
+    const targets = collectConsoleLines(doc).filter((t) =>
+      mode === 'comment'
+        ? !t.commented
+        : mode === 'uncomment'
+          ? t.commented
+          : true
+    );
+    // 从后往前删，避免行号偏移
+    const ordered = [...targets].sort((a, b) => b.line - a.line);
+    for (const t of ordered) {
+      if (mode === 'comment') {
+        edit.insert(uri, new vscode.Position(t.line, t.indentLen), '// ');
+      } else if (mode === 'uncomment') {
+        edit.delete(
+          uri,
+          new vscode.Range(
+            t.line,
+            t.indentLen,
+            t.line,
+            t.indentLen + t.commentLen
+          )
+        );
+      } else {
+        const line = doc.lineAt(t.line);
+        if (t.line === doc.lineCount - 1 && doc.lineCount > 1) {
+          edit.delete(
+            uri,
+            new vscode.Range(doc.lineAt(t.line - 1).range.end, line.range.end)
+          );
+        } else {
+          edit.delete(uri, line.rangeIncludingLineBreak);
+        }
+      }
+      total++;
+    }
+  }
+  if (total === 0) {
+    vscode.window.showInformationMessage(`Easy Console Log: 没有可${modeText}的日志`);
+    return;
+  }
+  await vscode.workspace.applyEdit(edit);
+  vscode.window.showInformationMessage(
+    `Easy Console Log: 已在工作区中${modeText} ${total} 条日志`
+  );
+}
+
+export function workspaceCommentAll(): Promise<void> {
+  return batchOnWorkspace('comment');
+}
+
+export function workspaceUncommentAll(): Promise<void> {
+  return batchOnWorkspace('uncomment');
+}
+
+export function workspaceDeleteAll(): Promise<void> {
+  return batchOnWorkspace('delete');
 }

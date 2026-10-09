@@ -4,10 +4,18 @@
   "easyConsoleLog.command.commentAll": "Easy Console Log: Comment All Logs",
   "easyConsoleLog.command.uncommentAll": "Easy Console Log: Uncomment All Logs",
   "easyConsoleLog.command.deleteAll": "Easy Console Log: Delete All Logs",
+  "easyConsoleLog.command.toggleCurrentLog": "Easy Console Log: Toggle Current Log Comment",
+  "easyConsoleLog.command.workspace.commentAll": "Easy Console Log: Comment All Logs in Workspace",
+  "easyConsoleLog.command.workspace.uncommentAll": "Easy Console Log: Uncomment All Logs in Workspace",
+  "easyConsoleLog.command.workspace.deleteAll": "Easy Console Log: Delete All Logs in Workspace",
   "easyConsoleLog.command.explorer.commentAll": "Comment All",
   "easyConsoleLog.command.explorer.uncommentAll": "Uncomment All",
   "easyConsoleLog.command.explorer.deleteAll": "Delete All",
   "easyConsoleLog.command.explorer.refresh": "Refresh",
+  "easyConsoleLog.command.explorer.filter": "Filter Levels",
+  "easyConsoleLog.command.explorer.toggleItem": "Toggle Comment",
+  "easyConsoleLog.command.explorer.deleteItem": "Delete Log",
+  "easyConsoleLog.command.explorer.copyText": "Copy Text",
   "easyConsoleLog.view.container.title": "Easy Console Log",
   "easyConsoleLog.view.explorer.title": "Consoles",
   "easyConsoleLog.configuration.title": "Easy Console Log",
@@ -16,5 +24,8 @@
   "easyConsoleLog.addSemicolon.description": "Append a semicolon at the end of generated log statements",
   "easyConsoleLog.logFunction.description": "Log function used for generated statements, e.g. console.log / console.debug / console.warn",
   "easyConsoleLog.includeFilename.description": "Include the file name in the log message",
-  "easyConsoleLog.includeLineNumber.description": "Include the line number in the log message"
+  "easyConsoleLog.includeLineNumber.description": "Include the line number in the log message",
+  "easyConsoleLog.messageTemplate.description": "Log message template. Placeholders: ${prefix} ${file} ${line} ${location} ${expr}",
+  "easyConsoleLog.diagnostics.enabled.description": "Show diagnostics markers on console.* lines",
+  "easyConsoleLog.diagnostics.severity.description": "Severity level of the console.* diagnostics"
 }

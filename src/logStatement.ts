@@ -13,9 +13,37 @@ function escapeForQuote(text: string, quote: string): string {
   return text.replace(/\\/g, '\\\\').replace(new RegExp(escapeRegExp(quote), 'g'), `\\${quote}`);
 }
 
+/** 按文件名选择日志函数：Python 默认 print，其余用配置的 logFunction */
+export function logFunctionForFile(fileName: string, cfg: EclConfig): string {
+  if (/\.py$/i.test(fileName) && cfg.logFunction === 'console.log') {
+    return 'print';
+  }
+  return cfg.logFunction;
+}
+
+/** 渲染消息模板，支持 ${prefix} ${file} ${line} ${location} ${expr} */
+function renderTemplate(
+  template: string,
+  expression: string,
+  fileName: string,
+  lineNumber: number,
+  cfg: EclConfig
+): string {
+  const file = cfg.includeFilename ? fileName : '';
+  const line = cfg.includeLineNumber ? String(lineNumber) : '';
+  const location = [file, line].filter(Boolean).join(':');
+  return template
+    .replace(/\$\{prefix\}/g, cfg.prefix)
+    .replace(/\$\{file\}/g, file)
+    .replace(/\$\{line\}/g, line)
+    .replace(/\$\{location\}/g, location)
+    .replace(/\$\{expr\}/g, escapeForQuote(expression, cfg.quote));
+}
+
 /**
  * 构建一条日志语句，例如：
  *   console.log('🪵 ~ app.ts:42 ~ userName:', userName);
+ * expr 为对象字面量（如 {a, b}）时，末尾不再追加第二个实参。
  */
 export function buildLogStatement(
   expression: string,
@@ -24,21 +52,17 @@ export function buildLogStatement(
   indent: string,
   cfg: EclConfig
 ): string {
-  const parts: string[] = [cfg.prefix];
-  const location: string[] = [];
-  if (cfg.includeFilename) {
-    location.push(fileName);
-  }
-  if (cfg.includeLineNumber) {
-    location.push(String(lineNumber));
-  }
-  if (location.length > 0) {
-    parts.push(location.join(':'));
-  }
-  parts.push(`${escapeForQuote(expression, cfg.quote)}:`);
-  const message = parts.join(' ~ ');
-  const semi = cfg.semicolon ? ';' : '';
-  return `${indent}${cfg.logFunction}(${cfg.quote}${message}${cfg.quote}, ${expression})${semi}`;
+  const message = renderTemplate(
+    cfg.messageTemplate,
+    expression,
+    fileName,
+    lineNumber,
+    cfg
+  );
+  const isPy = /\.py$/i.test(fileName);
+  const semi = cfg.semicolon && !isPy ? ';' : '';
+  const fn = logFunctionForFile(fileName, cfg);
+  return `${indent}${fn}(${cfg.quote}${message}${cfg.quote}, ${expression})${semi}`;
 }
 
 /**

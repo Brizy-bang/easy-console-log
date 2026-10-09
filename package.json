@@ -2,7 +2,7 @@
   "name": "easy-console-log",
   "displayName": "Easy Console Log",
   "description": "%easyConsoleLog.description%",
-  "version": "0.1.4",
+  "version": "0.2.0",
   "publisher": "Brizy-b",
   "license": "MIT",
   "repository": {
@@ -19,21 +19,14 @@
   "main": "./out/extension.js",
   "icon": "images/icon.png",
   "activationEvents": [
-    "onCommand:easyConsoleLog.insert",
-    "onCommand:easyConsoleLog.commentAll",
-    "onCommand:easyConsoleLog.uncommentAll",
-    "onCommand:easyConsoleLog.deleteAll",
-    "onCommand:easyConsoleLog.explorer.commentAll",
-    "onCommand:easyConsoleLog.explorer.uncommentAll",
-    "onCommand:easyConsoleLog.explorer.deleteAll",
-    "onCommand:easyConsoleLog.explorer.refresh",
-    "onView:easyConsoleLog.explorer",
     "onLanguage:javascript",
     "onLanguage:typescript",
     "onLanguage:javascriptreact",
     "onLanguage:typescriptreact",
     "onLanguage:vue",
-    "onLanguage:json"
+    "onLanguage:json",
+    "onLanguage:svelte",
+    "onLanguage:python"
   ],
   "contributes": {
     "commands": [
@@ -54,6 +47,22 @@
         "title": "%easyConsoleLog.command.deleteAll%"
       },
       {
+        "command": "easyConsoleLog.toggleCurrentLog",
+        "title": "%easyConsoleLog.command.toggleCurrentLog%"
+      },
+      {
+        "command": "easyConsoleLog.workspace.commentAll",
+        "title": "%easyConsoleLog.command.workspace.commentAll%"
+      },
+      {
+        "command": "easyConsoleLog.workspace.uncommentAll",
+        "title": "%easyConsoleLog.command.workspace.uncommentAll%"
+      },
+      {
+        "command": "easyConsoleLog.workspace.deleteAll",
+        "title": "%easyConsoleLog.command.workspace.deleteAll%"
+      },
+      {
         "command": "easyConsoleLog.explorer.commentAll",
         "title": "%easyConsoleLog.command.explorer.commentAll%",
         "icon": "$(comment)"
@@ -72,6 +81,49 @@
         "command": "easyConsoleLog.explorer.refresh",
         "title": "%easyConsoleLog.command.explorer.refresh%",
         "icon": "$(refresh)"
+      },
+      {
+        "command": "easyConsoleLog.explorer.filter",
+        "title": "%easyConsoleLog.command.explorer.filter%",
+        "icon": "$(filter)"
+      },
+      {
+        "command": "easyConsoleLog.explorer.toggleItem",
+        "title": "%easyConsoleLog.command.explorer.toggleItem%"
+      },
+      {
+        "command": "easyConsoleLog.explorer.deleteItem",
+        "title": "%easyConsoleLog.command.explorer.deleteItem%"
+      },
+      {
+        "command": "easyConsoleLog.explorer.copyText",
+        "title": "%easyConsoleLog.command.explorer.copyText%"
+      }
+    ],
+    "snippets": [
+      {
+        "language": "javascript",
+        "path": "./snippets/console-log.code-snippets"
+      },
+      {
+        "language": "typescript",
+        "path": "./snippets/console-log.code-snippets"
+      },
+      {
+        "language": "javascriptreact",
+        "path": "./snippets/console-log.code-snippets"
+      },
+      {
+        "language": "typescriptreact",
+        "path": "./snippets/console-log.code-snippets"
+      },
+      {
+        "language": "vue",
+        "path": "./snippets/console-log.code-snippets"
+      },
+      {
+        "language": "svelte",
+        "path": "./snippets/console-log.code-snippets"
       }
     ],
     "viewsContainers": {
@@ -79,7 +131,7 @@
         {
           "id": "easyConsoleLog",
           "title": "%easyConsoleLog.view.container.title%",
-          "icon": "images/icon.png"
+          "icon": "images/icon.svg"
         }
       ]
     },
@@ -88,7 +140,7 @@
         {
           "id": "easyConsoleLog.explorer",
           "name": "%easyConsoleLog.view.explorer.title%",
-          "icon": "images/icon.png"
+          "icon": "images/icon.svg"
         }
       ]
     },
@@ -110,9 +162,36 @@
           "group": "navigation@3"
         },
         {
-          "command": "easyConsoleLog.explorer.refresh",
+          "command": "easyConsoleLog.explorer.filter",
           "when": "view == easyConsoleLog.explorer",
           "group": "navigation@4"
+        },
+        {
+          "command": "easyConsoleLog.explorer.refresh",
+          "when": "view == easyConsoleLog.explorer",
+          "group": "navigation@5"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "easyConsoleLog.explorer.toggleItem",
+          "when": "view == easyConsoleLog.explorer && viewItem == logItem",
+          "group": "inline@1"
+        },
+        {
+          "command": "easyConsoleLog.explorer.toggleItem",
+          "when": "view == easyConsoleLog.explorer && viewItem == logItem.commented",
+          "group": "inline@1"
+        },
+        {
+          "command": "easyConsoleLog.explorer.deleteItem",
+          "when": "view == easyConsoleLog.explorer && viewItem =~ /^logItem/",
+          "group": "inline@2"
+        },
+        {
+          "command": "easyConsoleLog.explorer.copyText",
+          "when": "view == easyConsoleLog.explorer && viewItem =~ /^logItem/",
+          "group": "inline@3"
         }
       ]
     },
@@ -139,6 +218,12 @@
         "command": "easyConsoleLog.deleteAll",
         "key": "alt+shift+d",
         "mac": "alt+shift+d",
+        "when": "editorTextFocus"
+      },
+      {
+        "command": "easyConsoleLog.toggleCurrentLog",
+        "key": "ctrl+alt+c",
+        "mac": "ctrl+alt+c",
         "when": "editorTextFocus"
       }
     ],
@@ -179,6 +264,22 @@
           "type": "boolean",
           "default": true,
           "description": "%easyConsoleLog.includeLineNumber.description%"
+        },
+        "easyConsoleLog.messageTemplate": {
+          "type": "string",
+          "default": "${prefix} ~ ${location} ~ ${expr}:",
+          "description": "%easyConsoleLog.messageTemplate.description%"
+        },
+        "easyConsoleLog.diagnostics.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "%easyConsoleLog.diagnostics.enabled.description%"
+        },
+        "easyConsoleLog.diagnostics.severity": {
+          "type": "string",
+          "enum": ["error", "warning", "information", "hint"],
+          "default": "information",
+          "description": "%easyConsoleLog.diagnostics.severity.description%"
         }
       }
     }

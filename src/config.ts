@@ -13,6 +13,12 @@ export interface EclConfig {
   includeFilename: boolean;
   /** 消息中是否包含行号 */
   includeLineNumber: boolean;
+  /** 消息模板，支持 ${prefix} ${file} ${line} ${expr} 占位符 */
+  messageTemplate: string;
+  /** 是否为 console.* 行添加诊断提示 */
+  diagnosticsEnabled: boolean;
+  /** 诊断提示的严重级别 */
+  diagnosticsSeverity: 'error' | 'warning' | 'information' | 'hint';
 }
 
 export function getConfig(): EclConfig {
@@ -24,5 +30,12 @@ export function getConfig(): EclConfig {
     logFunction: cfg.get<string>('logFunction') ?? 'console.log',
     includeFilename: cfg.get<boolean>('includeFilename') ?? true,
     includeLineNumber: cfg.get<boolean>('includeLineNumber') ?? true,
+    messageTemplate:
+      cfg.get<string>('messageTemplate') ?? '${prefix} ~ ${location} ~ ${expr}:',
+    diagnosticsEnabled: cfg.get<boolean>('diagnostics.enabled') ?? true,
+    diagnosticsSeverity:
+      cfg.get<'error' | 'warning' | 'information' | 'hint'>(
+        'diagnostics.severity'
+      ) ?? 'information',
   };
 }
