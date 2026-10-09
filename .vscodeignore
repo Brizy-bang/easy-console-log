@@ -6,3 +6,5 @@ tsconfig.json
 .gitignore
 **/*.map
 **/*.ts
+out/**
+!out/extension.js

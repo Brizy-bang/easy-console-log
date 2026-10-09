@@ -12,10 +12,12 @@ A VS Code extension that helps you manage `console.*` statements: insert context
 | `Easy Console Log: Comment All Logs` | `Alt + Shift + C` | Comment out all generated logs in the current file |
 | `Easy Console Log: Uncomment All Logs` | `Alt + Shift + U` | Restore all commented logs |
 | `Easy Console Log: Delete All Logs` | `Alt + Shift + D` | Delete all generated logs in the current file (including commented ones) |
-| `Easy Console Log: Toggle Current Log Comment` | `Ctrl + Alt + C` | Toggle comment on the console call under the cursor |
+| `Easy Console Log: Toggle Current Log Comment` | `Ctrl + Alt + C` | Toggle comment on the console call(s) under the cursor or selection; multi-cursor supported |
 | `Easy Console Log: Comment/Uncomment/Delete All Logs in Workspace` | — | Batch operations across all files in the workspace |
 
-Selecting multiple identifiers separated by commas (e.g. `a, b, c`) generates `console.log({a, b, c})`. Selecting `const x = 1` normalizes to `x`.
+Selecting multiple identifiers separated by commas (e.g. `a, b, c`) generates `console.log({a, b, c})`. Selecting `const x = 1` normalizes to `x`, and `const { a, b } = obj` generates `console.log({a, b})`.
+
+All comment / uncomment / delete operations work on the **whole call**: a `console.log(...)` spanning multiple lines (e.g. wrapped by Prettier) is handled as a unit, so no half-broken code is left behind.
 
 ## Console Explorer Sidebar
 
@@ -34,13 +36,13 @@ const userName = 'devin';
 console.log('🪵 ~ app.ts:2 ~ userName:', userName);
 ```
 
-Member expressions like `this.state.list` and `a['key']` are fully recognized when the cursor sits on them. Multi-cursor is supported.
+Member expressions like `this.state.list`, `a?.b` and `a['key']` are fully recognized when the cursor sits on them; keywords, numbers and object-literal keys are ignored. Multi-cursor is supported, and line numbers in the generated messages account for the other inserted logs.
 
 ## Supported Languages
 
 - **JS / TS / JSX / TSX**: full AST-aware statement-boundary insertion.
-- **Vue / Svelte**: the `<script>` block is parsed for AST-aware insertion.
-- **Python (`.py`)**: generates `print(...)` statements (no semicolon) with line-level insertion.
+- **Vue / Svelte**: every `<script>` block (including `<script setup>`, parsed according to `lang`) is used for AST-aware insertion; the template area is skipped with a notice.
+- **Python (`.py`)**: generates `print(...)` statements (no semicolon) with line-level insertion, indenting one level after lines ending with `:` (`def`, `if`, ...). Comment / delete commands handle generated `print` logs using `#`.
 - Other files fall back to "insert on the next line".
 
 ## AST-Aware Insertion (JS/TS/JSX/TSX)
@@ -54,7 +56,8 @@ The extension parses the file with the TypeScript compiler API and locates the *
 | `param` inside `function f(param)` | First line of the function body |
 | `item` inside `for (const item of list)` | First line of the loop body |
 | Inside `interface` / `type` / `enum` | Skipped with a notice (types have no runtime value) |
-| Arrow concise body `x => x` | Skipped with a notice (nowhere to put a statement) |
+| Parameter or expression in an arrow concise body `x => x` | Skipped with a notice (nowhere to put a statement / out of scope outside) |
+| Braces opening and closing on the same line, e.g. `function f(a) { return a; }` | Skipped with a notice (the log would land outside the block) |
 
 Non-JS/TS files fall back to simple "insert on the next line" behavior.
 
@@ -64,15 +67,17 @@ Search for `easyConsoleLog` in VS Code settings:
 
 | Setting | Default | Description |
 | --- | --- | --- |
-| `easyConsoleLog.logMessagePrefix` | `🪵` | Log message prefix; also the marker used by batch operations |
+| `easyConsoleLog.logMessagePrefix` | `🪵` | Log message prefix; also the marker used by batch operations (batch operations are refused when it is empty, to protect hand-written logs) |
 | `easyConsoleLog.quote` | `'` | Quote style (`'` / `"` / `` ` ``) |
 | `easyConsoleLog.addSemicolon` | `true` | Append a semicolon to generated statements |
 | `easyConsoleLog.logFunction` | `console.log` | Log function, e.g. `console.debug` |
 | `easyConsoleLog.includeFilename` | `true` | Include the file name in the message |
 | `easyConsoleLog.includeLineNumber` | `true` | Include the line number in the message |
 | `easyConsoleLog.messageTemplate` | `${prefix} ~ ${location} ~ ${expr}:` | Message template; placeholders: `${prefix}` `${file}` `${line}` `${location}` `${expr}` |
-| `easyConsoleLog.diagnostics.enabled` | `true` | Show diagnostic markers on `console.*` lines (visible in Problems panel) |
-| `easyConsoleLog.diagnostics.severity` | `information` | Severity of the diagnostics (`error` / `warning` / `information` / `hint`) |
+| `easyConsoleLog.diagnostics.enabled` | `true` | Show diagnostic markers on uncommented `console.*` calls (JS/TS/Vue/Svelte only) |
+| `easyConsoleLog.diagnostics.severity` | `hint` | Severity of the diagnostics (`error` / `warning` / `information` / `hint`); `hint` only shows a faint marker and stays out of the Problems panel |
+
+**How generated logs are recognized**: by the fixed text at the start of the message, i.e. the part of the template before the first placeholder other than `${prefix}` (`🪵 ~ ` by default). The call can be `console.log/debug/info/warn/error` or the configured `logFunction` (e.g. `logger.info`).
 
 ## Snippets
 
@@ -83,6 +88,7 @@ Type `ecl` (or `ecln` without semicolon) in JS/TS/Vue/Svelte files to expand a c
 ```bash
 npm install
 npm run compile   # or npm run watch for continuous compilation
+npm run typecheck # type check only
 ```
 
 Open this folder in VS Code and press `F5` to launch an Extension Development Host window — open any JS/TS file there to try it out.
@@ -99,5 +105,6 @@ code --install-extension easy-console-log-<version>.vsix
 
 - Parameters/expressions inside arrow concise bodies (`x => x + 1`) cannot be logged and will be skipped with a notice.
 - For brace-less single-statement branches like `if (cond) doThing(x)`, the log is inserted after the whole `if` statement (semantically safe, but evaluated after the branch finishes).
-- The existing `Comment/Uncomment/Delete All Logs` commands only affect logs generated by this extension (matched by prefix); the sidebar batch buttons affect **all** `console.*` lines in the current file.
-- Workspace batch operations affect **all** `console.*` lines in JS/TS/Vue/Svelte/Python files and ask for confirmation first.
+- The `Comment/Uncomment/Delete All Logs` commands only affect logs generated by this extension; the sidebar batch buttons affect **all** `console.*` calls in the current file.
+- Calls sharing a line with other code (`console.log(a); foo();`) are skipped with a notice when commenting; deleting removes only the call itself.
+- Workspace batch operations scan JS/TS/Vue/Svelte files, skipping `node_modules`, `dist`, `coverage`, `.next`, etc., as well as `*.min.js` and bundled files with very long lines. You choose between "generated logs only" and "all console.*" before running; changes are not saved automatically, but the result notification offers a one-click save.

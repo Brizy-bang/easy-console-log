@@ -36,6 +36,6 @@ export function getConfig(): EclConfig {
     diagnosticsSeverity:
       cfg.get<'error' | 'warning' | 'information' | 'hint'>(
         'diagnostics.severity'
-      ) ?? 'information',
+      ) ?? 'hint',
   };
 }

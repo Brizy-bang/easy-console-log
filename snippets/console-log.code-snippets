@@ -2,11 +2,11 @@
   "Insert Easy Console Log": {
     "prefix": "ecl",
     "description": "Insert an Easy Console Log statement",
-    "body": "console.log('🪵 ~ ${TM_FILENAME_BASE}:${TM_LINE_NUMBER} ~ ${1:expr}:', ${1:expr});"
+    "body": "console.log('🪵 ~ ${TM_FILENAME}:${TM_LINE_NUMBER} ~ ${1:expr}:', ${1:expr});"
   },
   "Insert Easy Console Log (no semi)": {
     "prefix": "ecln",
     "description": "Insert an Easy Console Log statement without semicolon",
-    "body": "console.log('🪵 ~ ${TM_FILENAME_BASE}:${TM_LINE_NUMBER} ~ ${1:expr}:', ${1:expr})"
+    "body": "console.log('🪵 ~ ${TM_FILENAME}:${TM_LINE_NUMBER} ~ ${1:expr}:', ${1:expr})"
   }
 }

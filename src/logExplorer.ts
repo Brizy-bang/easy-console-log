@@ -1,9 +1,6 @@
 import * as vscode from 'vscode';
-import {
-  collectConsoleLines,
-  ConsoleLogLine,
-  applyToLine,
-} from './consoleScan';
+import { BatchMode, LogBlock, scanConsole } from './consoleScan';
+import { applyBatchToEditor, docLines, JS_LANGS } from './editUtil';
 
 const ALL_LEVELS = ['log', 'debug', 'info', 'warn', 'error'] as const;
 
@@ -27,10 +24,10 @@ class LogGroupItem extends vscode.TreeItem {
 export class LogItem extends vscode.TreeItem {
   constructor(
     public readonly doc: vscode.TextDocument,
-    public readonly info: ConsoleLogLine
+    public readonly info: LogBlock
   ) {
-    super(`${info.line + 1}: ${info.text}`, vscode.TreeItemCollapsibleState.None);
-    this.tooltip = info.text;
+    super(`${info.line + 1}: ${info.body}`, vscode.TreeItemCollapsibleState.None);
+    this.tooltip = info.body;
     this.description = info.commented ? '已注释' : '';
     this.iconPath = info.commented
       ? new vscode.ThemeIcon('debug-breakpoint-log-unverified')
@@ -44,42 +41,44 @@ export class LogItem extends vscode.TreeItem {
   }
 }
 
+/** 当前活动文档中可展示的 console 调用（不支持的语言返回 undefined） */
+function scanActive(): { doc: vscode.TextDocument; blocks: LogBlock[] } | undefined {
+  const doc = vscode.window.activeTextEditor?.document;
+  if (!doc || !JS_LANGS.has(doc.languageId)) {
+    return undefined;
+  }
+  return { doc, blocks: scanConsole(docLines(doc), doc.fileName) };
+}
+
 /** 侧边栏 Console 树数据提供者 */
-export class ConsoleLogExplorerProvider
-  implements vscode.TreeDataProvider<TreeNode>
-{
+export class ConsoleLogExplorerProvider implements vscode.TreeDataProvider<TreeNode> {
   private _onDidChangeTreeData = new vscode.EventEmitter<TreeNode | void>();
   readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
 
   private enabledLevels = new Set<string>(ALL_LEVELS);
-  private _stats = '';
+  /** 每次 refresh 扫描一次，供 getChildren 复用 */
+  private snapshot: ReturnType<typeof scanActive>;
+  private view: vscode.TreeView<TreeNode> | undefined;
 
   get levels(): Set<string> {
     return this.enabledLevels;
   }
 
-  /** 供 extension.ts 更新 TreeView.description 的统计文本 */
-  get stats(): string {
-    return this._stats;
-  }
-
-  private updateStats(): void {
-    const doc = vscode.window.activeTextEditor?.document;
-    if (!doc) {
-      this._stats = '';
-      return;
-    }
-    const groups = new Map<string, number>();
-    for (const l of collectConsoleLines(doc)) {
-      groups.set(l.level, (groups.get(l.level) ?? 0) + 1);
-    }
-    this._stats = groups.size
-      ? [...groups.entries()].map(([k, v]) => `${k}: ${v}`).join('  ')
-      : '无 console';
+  /** 绑定 TreeView，用于在刷新时更新描述栏统计 */
+  attach(view: vscode.TreeView<TreeNode>): void {
+    this.view = view;
   }
 
   refresh(): void {
-    this.updateStats();
+    this.snapshot = scanActive();
+    if (this.view) {
+      const groups = this.countByLevel();
+      this.view.description = !this.snapshot
+        ? ''
+        : groups.size
+          ? [...groups.entries()].map(([k, v]) => `${k}: ${v}`).join('  ')
+          : '无 console';
+    }
     this._onDidChangeTreeData.fire();
   }
 
@@ -88,44 +87,39 @@ export class ConsoleLogExplorerProvider
     this._onDidChangeTreeData.fire();
   }
 
+  private countByLevel(): Map<string, number> {
+    const groups = new Map<string, number>();
+    for (const b of this.snapshot?.blocks ?? []) {
+      groups.set(b.level, (groups.get(b.level) ?? 0) + 1);
+    }
+    return groups;
+  }
+
   getTreeItem(element: TreeNode): vscode.TreeItem {
     return element;
   }
 
-  getChildren(element?: TreeNode): Thenable<TreeNode[]> {
-    const doc = vscode.window.activeTextEditor?.document;
-    if (!doc) {
-      return Promise.resolve([]);
+  getChildren(element?: TreeNode): TreeNode[] {
+    const snap = this.snapshot;
+    if (!snap) {
+      return [];
     }
-    const all = collectConsoleLines(doc);
-    const lines = all.filter((l) => this.enabledLevels.has(l.level));
-
     if (!element) {
-      const groups = new Map<string, number>();
-      for (const l of all) {
-        groups.set(l.level, (groups.get(l.level) ?? 0) + 1);
-      }
-      return Promise.resolve(
-        [...groups.entries()]
-          .filter(([level]) => this.enabledLevels.has(level))
-          .map(([level, count]) => new LogGroupItem(level, count))
-      );
+      return [...this.countByLevel().entries()]
+        .filter(([level]) => this.enabledLevels.has(level))
+        .map(([level, count]) => new LogGroupItem(level, count));
     }
     if (element instanceof LogGroupItem) {
-      return Promise.resolve(
-        lines
-          .filter((l) => l.level === element.level)
-          .map((l) => new LogItem(doc, l))
-      );
+      return snap.blocks
+        .filter((b) => b.level === element.level)
+        .map((b) => new LogItem(snap.doc, b));
     }
-    return Promise.resolve([]);
+    return [];
   }
 }
 
 /** 打开级别筛选 QuickPick */
-export async function filterLevels(
-  provider: ConsoleLogExplorerProvider
-): Promise<void> {
+export async function filterLevels(provider: ConsoleLogExplorerProvider): Promise<void> {
   const items = ALL_LEVELS.map((level) => ({
     label: `console.${level}`,
     level,
@@ -148,82 +142,51 @@ export async function revealLine(uri: vscode.Uri, line: number): Promise<void> {
   const pos = new vscode.Position(line, 0);
   editor.selection = new vscode.Selection(pos, pos);
   editor.revealRange(
-    new vscode.Range(
-      pos,
-      new vscode.Position(line, doc.lineAt(line).text.length)
-    ),
+    new vscode.Range(pos, new vscode.Position(line, doc.lineAt(line).text.length)),
     vscode.TextEditorRevealType.InCenterIfOutsideViewport
   );
 }
 
-/** 切换单条日志的注释状态 */
-export async function toggleLogItem(item: LogItem): Promise<void> {
+/** 对单条日志执行操作；树节点可能已过期，先按当前内容重新定位 */
+async function applyToItem(
+  provider: ConsoleLogExplorerProvider,
+  item: LogItem,
+  mode: (b: LogBlock) => BatchMode
+): Promise<void> {
   const editor = await vscode.window.showTextDocument(item.doc);
-  await editor.edit((builder) => {
-    applyToLine(
-      builder,
-      item.doc,
-      item.info,
-      item.info.commented ? 'uncomment' : 'comment'
-    );
-  });
+  const lines = docLines(item.doc);
+  const current = scanConsole(lines, item.doc.fileName).find(
+    (b) => b.line === item.info.line && b.body === item.info.body
+  );
+  if (!current) {
+    provider.refresh();
+    vscode.window.showInformationMessage('Easy Console Log: 日志内容已变化，列表已刷新');
+    return;
+  }
+  await applyBatchToEditor(editor, lines, [current], mode(current), false);
+}
+
+/** 切换单条日志的注释状态 */
+export function toggleLogItem(provider: ConsoleLogExplorerProvider, item: LogItem): Promise<void> {
+  return applyToItem(provider, item, (b) => (b.commented ? 'uncomment' : 'comment'));
 }
 
 /** 删除单条日志 */
-export async function deleteLogItem(item: LogItem): Promise<void> {
-  const editor = await vscode.window.showTextDocument(item.doc);
-  await editor.edit((builder) => {
-    applyToLine(builder, item.doc, item.info, 'delete');
-  });
+export function deleteLogItem(provider: ConsoleLogExplorerProvider, item: LogItem): Promise<void> {
+  return applyToItem(provider, item, () => 'delete');
 }
 
 /** 复制日志文本 */
 export async function copyLogText(item: LogItem): Promise<void> {
-  await vscode.env.clipboard.writeText(item.info.text);
+  await vscode.env.clipboard.writeText(item.info.body);
 }
 
-function getTargetDoc(): vscode.TextDocument | undefined {
-  return vscode.window.activeTextEditor?.document;
-}
-
-async function batchOnCurrentFile(mode: 'comment' | 'uncomment' | 'delete') {
-  const doc = getTargetDoc();
+/** 对当前文件所有 console.* 执行批量操作 */
+export async function batchOnCurrentFile(mode: BatchMode): Promise<void> {
   const editor = vscode.window.activeTextEditor;
-  if (!doc || !editor) {
+  if (!editor) {
     return;
   }
-  const all = collectConsoleLines(doc);
-  const targets = all.filter((t) =>
-    mode === 'comment' ? !t.commented : mode === 'uncomment' ? t.commented : true
-  );
-  if (targets.length === 0) {
-    vscode.window.showInformationMessage(
-      `Easy Console Log: 没有可${
-        mode === 'comment' ? '注释' : mode === 'uncomment' ? '取消注释' : '删除'
-      }的日志`
-    );
-    return;
-  }
-  await editor.edit((builder) => {
-    for (const t of targets) {
-      applyToLine(builder, doc, t, mode);
-    }
-  });
-  vscode.window.showInformationMessage(
-    `Easy Console Log: 已${
-      mode === 'comment' ? '注释' : mode === 'uncomment' ? '恢复' : '删除'
-    } ${targets.length} 条日志`
-  );
-}
-
-export function explorerCommentAll(): Promise<void> {
-  return batchOnCurrentFile('comment');
-}
-
-export function explorerUncommentAll(): Promise<void> {
-  return batchOnCurrentFile('uncomment');
-}
-
-export function explorerDeleteAll(): Promise<void> {
-  return batchOnCurrentFile('delete');
+  const lines = docLines(editor.document);
+  await applyBatchToEditor(editor, lines, scanConsole(lines, editor.document.fileName), mode);
 }
