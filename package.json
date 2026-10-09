@@ -3,8 +3,12 @@
   "displayName": "Easy Console Log",
   "description": "%easyConsoleLog.description%",
   "version": "0.1.1",
-  "publisher": "local",
+  "publisher": "Brizy-b",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Brizy-bang/easy-console-log.git"
+  },
   "engines": {
     "vscode": "^1.85.0"
   },
@@ -13,6 +17,18 @@
     "Snippets"
   ],
   "main": "./out/extension.js",
+  "activationEvents": [
+    "onCommand:easyConsoleLog.insert",
+    "onCommand:easyConsoleLog.commentAll",
+    "onCommand:easyConsoleLog.uncommentAll",
+    "onCommand:easyConsoleLog.deleteAll",
+    "onLanguage:javascript",
+    "onLanguage:typescript",
+    "onLanguage:javascriptreact",
+    "onLanguage:typescriptreact",
+    "onLanguage:vue",
+    "onLanguage:json"
+  ],
   "contributes": {
     "commands": [
       {
