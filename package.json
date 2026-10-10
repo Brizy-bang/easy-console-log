@@ -2,7 +2,7 @@
   "name": "easy-console-log",
   "displayName": "Easy Console Log",
   "description": "%easyConsoleLog.description%",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "publisher": "Brizy-b",
   "license": "MIT",
   "repository": {
@@ -362,7 +362,7 @@
     "watch": "tsc -watch -p ./",
     "typecheck": "tsc -p ./ --noEmit && tsc -p ./test",
     "test": "esbuild test/*.test.ts --bundle --platform=node --format=cjs --outdir=out-test --log-level=warning && node --test out-test/",
-    "esbuild-base": "esbuild ./src/extension.ts ./src/astResolver.ts --bundle --outdir=./out --external:vscode --external:./astResolver --format=cjs --platform=node",
+    "esbuild-base": "esbuild ./src/extension.ts ./src/astResolver.ts --bundle --outdir=./out --external:vscode --external:./astResolver --format=cjs --platform=node --supported:dynamic-import=false",
     "esbuild": "npm run esbuild-base -- --sourcemap",
     "lint": "eslint src test"
   },

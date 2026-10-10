@@ -2,6 +2,15 @@
 
 All notable changes to the "Easy Console Log" extension are documented in this file.
 
+## [0.3.2] - 2026-10-10
+
+### Fixed
+
+- The packaged extension failed to load the lazy `astResolver` chunk: esbuild kept `import('./astResolver')`
+  as a native dynamic import, whose ESM resolution does not append the `.js` extension, so every log command
+  threw `Cannot find module '.../out/astResolver'`. esbuild now compiles the external dynamic import down to
+  `require()` via `--supported:dynamic-import=false`.
+
 ## [0.3.1] - 2026-10-09
 
 ### Changed
