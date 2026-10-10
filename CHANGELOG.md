@@ -2,6 +2,13 @@
 
 All notable changes to the "Easy Console Log" extension are documented in this file.
 
+## [0.3.1] - 2026-10-09
+
+### Changed
+
+- The TypeScript-based AST resolver is now packaged as a separate bundle (`out/astResolver.js`) loaded on first
+  use, shrinking the extension entry (`out/extension.js`) from ~3.3 MB to ~26 KB and improving activation time.
+
 ## [0.3.0] - 2026-10-09
 
 ### Added

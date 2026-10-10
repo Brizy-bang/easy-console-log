@@ -2,7 +2,7 @@
   "name": "easy-console-log",
   "displayName": "Easy Console Log",
   "description": "%easyConsoleLog.description%",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "publisher": "Brizy-b",
   "license": "MIT",
   "repository": {
