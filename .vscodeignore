@@ -8,6 +8,7 @@ tsconfig.json
 **/*.ts
 out/**
 !out/extension.js
+!out/astResolver.js
 out-test/**
 test/**
 AGENTS.md
