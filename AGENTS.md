@@ -4,7 +4,7 @@
 
 - `npm run typecheck`: type check (`src` + `test`)
 - `npm run lint`: ESLint (flat config in `eslint.config.mjs`, including `max-len: 120`)
-- `npm test`: unit tests (esbuild bundles `test/*.test.ts` into `out-test/`, then runs them with `node --test`)
+- `npm test`: unit tests (esbuild bundles `test/*.test.ts` into `out-test/`, then runs them with `bash -c 'node --test out-test/*.test.js'`)
 - `npm run esbuild-base -- --minify`: production bundle to `out/extension.js`
 - `npm run smoke`: smoke test against the bundled `out/` (requires a prior esbuild build)
 - `npm run vscode:prepublish`: pre-publish check (typecheck + lint + test + bundle)
