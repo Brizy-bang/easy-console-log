@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { getConfig } from './config';
 import { scanConsole } from './consoleScan';
-import { docLines, JS_LANGS } from './editUtil';
+import { docLines, SCAN_LANGS } from './editUtil';
 
 export const DIAGNOSTIC_SOURCE = 'easy-console-log';
 
@@ -18,7 +18,7 @@ export function refreshDiagnostics(
   doc: vscode.TextDocument
 ): void {
   const cfg = getConfig(doc);
-  if (!cfg.diagnosticsEnabled || doc.uri.scheme !== 'file' || !JS_LANGS.has(doc.languageId)) {
+  if (!cfg.diagnosticsEnabled || doc.uri.scheme !== 'file' || !SCAN_LANGS.has(doc.languageId)) {
     collection.delete(doc.uri);
     return;
   }

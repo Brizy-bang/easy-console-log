@@ -8,15 +8,19 @@ import {
   splitLines,
 } from './consoleScan';
 
-/** Languages supported by the sidebar, diagnostics and workspace batch ops (console.* semantics) */
-export const JS_LANGS = new Set([
+/** Languages supported by the sidebar, diagnostics and batch ops (console.* / print semantics) */
+export const SCAN_LANGS = new Set([
   'javascript',
   'typescript',
   'javascriptreact',
   'typescriptreact',
   'vue',
   'svelte',
+  'python',
 ]);
+
+/** @deprecated use SCAN_LANGS */
+export const JS_LANGS = SCAN_LANGS;
 
 /** Edit sink that works with both TextEditorEdit and WorkspaceEdit */
 export interface EditSink {

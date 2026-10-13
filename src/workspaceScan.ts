@@ -3,7 +3,7 @@ import { getConfig } from './config';
 import { escapeRegExp, splitLines } from './consoleScan';
 import { docLines } from './editUtil';
 
-const EXTENSIONS = ['js', 'ts', 'jsx', 'tsx', 'mjs', 'cjs', 'mts', 'cts', 'vue', 'svelte'];
+const EXTENSIONS = ['js', 'ts', 'jsx', 'tsx', 'mjs', 'cjs', 'mts', 'cts', 'vue', 'svelte', 'py'];
 
 export const WORKSPACE_GLOB = `**/*.{${EXTENSIONS.join(',')}}`;
 const EXT_RE = new RegExp(`\\.(${EXTENSIONS.join('|')})$`, 'i');

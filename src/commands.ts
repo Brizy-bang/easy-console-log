@@ -21,7 +21,7 @@ import {
   applyLineEdits,
   batchResultMessage,
   docLines,
-  JS_LANGS,
+  SCAN_LANGS,
   modeVerb,
   toTextEdits,
   workspaceSink,
@@ -73,7 +73,12 @@ function splitTopLevelCommas(expr: string): string[] {
   for (let i = 0; i < expr.length; i++) {
     const c = expr[i];
     if (quote) {
-      if (c === quote && expr[i - 1] !== '\\') {
+      // a quote preceded by an odd run of backslashes is escaped ('\\"' closes, '\"' does not)
+      let bs = 0;
+      while (expr[i - 1 - bs] === '\\') {
+        bs++;
+      }
+      if (c === quote && bs % 2 === 0) {
         quote = undefined;
       }
     } else if (c === '"' || c === "'" || c === '`') {
@@ -146,6 +151,10 @@ async function buildResolver(doc: vscode.TextDocument): Promise<DocResolver | un
     namesAt(offset) {
       const b = find(offset);
       return b ? b.resolver.namesAt(offset - b.start) : { func: '', cls: '' };
+    },
+    paramsAt(offset) {
+      const b = find(offset);
+      return b?.resolver.paramsAt(offset - b.start);
     },
   };
 }
@@ -264,6 +273,13 @@ export async function insertLog(args?: InsertArgs): Promise<void> {
     }
 
     const probeOffset = doc.offsetAt(probe);
+    // cursor on a function name logs its whole parameter list instead of the name itself
+    if (sel.isEmpty) {
+      const params = resolver?.covers(probeOffset) ? resolver.paramsAt(probeOffset) : undefined;
+      if (params) {
+        expression = params.length === 1 ? params[0] : `{${params.join(', ')}}`;
+      }
+    }
     const res = resolver?.resolve(probeOffset);
     const names = resolver?.namesAt(probeOffset) ?? { func: '', cls: '' };
     let target: Target;
@@ -330,9 +346,15 @@ export async function insertLog(args?: InsertArgs): Promise<void> {
   }
 }
 
-let lastLevel: ConsoleLevel = 'log';
+const LAST_LEVEL_KEY = 'easyConsoleLog.lastLevel';
+let globalState: vscode.Memento | undefined;
 
-/** Pick a console level first, then insert; the last choice is listed first */
+/** Bind the extension context once, so the last-picked level survives restarts */
+export function initCommands(context: vscode.ExtensionContext): void {
+  globalState = context.globalState;
+}
+
+/** Pick a console level first, then insert; the last choice is listed first and persisted */
 export async function insertLogWithLevel(): Promise<void> {
   const doc = vscode.window.activeTextEditor?.document;
   if (!doc) {
@@ -341,13 +363,15 @@ export async function insertLogWithLevel(): Promise<void> {
   if (isPythonFile(doc.fileName)) {
     return insertLog();
   }
+  const stored = globalState?.get<ConsoleLevel>(LAST_LEVEL_KEY);
+  const lastLevel = stored && isLevel(stored) ? stored : 'log';
   const levels = [lastLevel, ...CONSOLE_LEVELS.filter((l) => l !== lastLevel)];
   const picked = await vscode.window.showQuickPick(
     levels.map((level) => ({ label: `console.${level}`, level })),
     { title: vscode.l10n.t('Select the console level to insert') }
   );
   if (picked) {
-    lastLevel = picked.level;
+    void globalState?.update(LAST_LEVEL_KEY, picked.level);
     await insertLog({ level: picked.level });
   }
 }
@@ -378,7 +402,7 @@ export function registerLineNumbersOnSave(context: vscode.ExtensionContext): voi
     vscode.workspace.onWillSaveTextDocument((e) => {
       const doc = e.document;
       const cfg = getConfig(doc);
-      if (!cfg.updateLineNumbersOnSave || !(JS_LANGS.has(doc.languageId) || doc.languageId === 'python')) {
+      if (!cfg.updateLineNumbersOnSave || !SCAN_LANGS.has(doc.languageId)) {
         return;
       }
       const r = lineNumberEdits(docLines(doc), path.basename(doc.fileName), cfg);

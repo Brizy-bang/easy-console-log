@@ -9,7 +9,7 @@
 | 命令 | 快捷键 (Win/Linux / Mac) | 说明 |
 | --- | --- | --- |
 | `Easy Console Log: 插入日志语句` | `Ctrl + Alt + L` | 为选中的表达式（或光标下的变量）在合适位置插入日志 |
-| `Easy Console Log: 插入指定级别的日志语句…` | — | 先选择 `log / info / debug / warn / error / trace` 再插入，上次的选择排在最前 |
+| `Easy Console Log: 插入指定级别的日志语句…` | — | 先选择 `log / info / debug / warn / error / trace` 再插入，上次的选择排在最前（重启后仍然保留） |
 | `Easy Console Log: 刷新日志行号` | — | 把当前文件中生成日志里过时的 `文件名:行号` 刷新为当前位置 |
 | `Easy Console Log: 注释所有日志` | `Alt + Shift + C` | 注释当前文件内所有生成的日志 |
 | `Easy Console Log: 取消注释所有日志` | `Alt + Shift + U` | 恢复所有被注释的日志 |
@@ -18,7 +18,7 @@
 | `Easy Console Log: 注释/取消注释/删除工作区所有日志` | — | 对整个工作区批量操作 |
 | `Easy Console Log: 注释/取消注释/删除 Git 变更文件中的所有日志` | — | 只对有 Git 变更（已修改 / 已暂存 / 未跟踪）的文件批量操作，适合提交前清理调试日志 |
 
-选中 `a, b, c` 这类逗号分隔的多个标识符会生成 `console.log({a, b, c})`；选中 `const x = 1` 会自动取 `x`，选中 `const { a, b } = obj` 会生成 `console.log({a, b})`。
+选中 `a, b, c` 这类逗号分隔的多个标识符会生成 `console.log({a, b, c})`；选中 `const x = 1` 会自动取 `x`，选中 `const { a, b } = obj` 会生成 `console.log({a, b})`。光标放在**函数名**上时，会在函数体第一行打印全部参数——`function fetchUser(id, opts)` 生成 `console.log('🔥 ~ app.ts:N ~ {id, opts}:', {id, opts})`（解构参数会展开）。
 
 所有注释 / 取消注释 / 删除操作都以**完整调用**为单位，跨多行的 `console.log(...)`（如被 Prettier 折行）会整体处理，不会留下半截语法错误的代码。
 
@@ -50,20 +50,21 @@
 
 - 编辑文件、文件在磁盘上变化（如切换分支）时增量更新对应文件。
 - 顶部工具栏：工作区**注释全部**、**取消注释全部**、**删除全部**，以及**筛选级别**、**重新扫描**。
+- 右键文件节点可对该文件单独执行**注释全部 / 取消注释全部 / 删除全部**。
 - 单条日志的按钮与当前文件视图一致。
 
 ## 生成的日志格式
 
 ```ts
 const userName = 'devin';
-console.log('🪵 ~ app.ts:2 ~ userName:', userName);
+console.log('🔥 ~ app.ts:2 ~ userName:', userName);
 ```
 
 使用 `${prefix} ~ ${func} ~ ${expr}:` 这类模板时，消息会带上外层函数名：
 
 ```ts
 function fetchUser(id: string) {
-  console.log('🪵 ~ fetchUser ~ id:', id);
+  console.log('🔥 ~ fetchUser ~ id:', id);
 }
 ```
 
@@ -75,7 +76,7 @@ function fetchUser(id: string) {
 
 - **JS / TS / JSX / TSX**：完整 AST 语句边界感知插入。
 - **Vue / Svelte**：解析所有 `<script>` 块（含 `<script setup>`，按 `lang` 选择 TS/JS/TSX 解析）进行 AST 感知插入；光标在模板区时跳过并提示。
-- **Python（`.py`）**：生成 `print(...)` 语句（不带分号），按行级插入，在 `def` / `if` 等以冒号结尾的行之后会自动缩进一级；注释/删除命令使用 `#` 处理生成的 `print` 日志。
+- **Python（`.py`）**：生成 `print(...)` 语句（不带分号），按行级插入，在 `def` / `if` 等以冒号结尾的行之后会自动缩进一级；`print` 调用与 `console.*` 一样会出现在侧边栏、诊断、Quick Fix 和工作区扫描中；注释/删除使用 `#`。
 - 其他文件降级为"当前行下一行插入"。
 
 ## AST 智能插入（JS/TS/JSX/TSX）
@@ -100,7 +101,7 @@ function fetchUser(id: string) {
 
 | 配置 | 默认值 | 说明 |
 | --- | --- | --- |
-| `easyConsoleLog.logMessagePrefix` | `🪵` | 日志消息前缀，也是批量操作的识别标记（为空时拒绝批量操作，避免误删手写日志） |
+| `easyConsoleLog.logMessagePrefix` | `🔥` | 日志消息前缀，也是批量操作的识别标记（为空时拒绝批量操作，避免误删手写日志） |
 | `easyConsoleLog.quote` | `'` | 引号风格（`'` / `"` / `` ` ``） |
 | `easyConsoleLog.addSemicolon` | `true` | 末尾是否加分号 |
 | `easyConsoleLog.logFunction` | `console.log` | 日志函数，可改为 `console.debug` 等 |
@@ -108,11 +109,13 @@ function fetchUser(id: string) {
 | `easyConsoleLog.includeLineNumber` | `true` | 消息中是否包含行号 |
 | `easyConsoleLog.messageTemplate` | `${prefix} ~ ${location} ~ ${expr}:` | 消息模板，占位符：`${prefix}` `${file}` `${line}` `${location}` `${func}` `${cls}` `${expr}`（`${func}`/`${cls}` 为外层函数名 / 类名，仅 JS/TS/Vue/Svelte） |
 | `easyConsoleLog.workspace.excludeDirs` | `node_modules`、`dist`、`out`、`build`、`.git`、`vendor`、`coverage`、`.next`、`.nuxt`、`.output`、`.svelte-kit` | 工作区扫描时排除的目录名；自动合并 `files.exclude` / `search.exclude` |
-| `easyConsoleLog.diagnostics.enabled` | `true` | 是否为未注释的 `console.*` 调用显示诊断提示（仅 JS/TS/Vue/Svelte） |
+| `easyConsoleLog.jsonStringify` | `false` | 把被记录的表达式包进 `JSON.stringify(expr, null, 2)`，记录对象快照而不是惰性引用（仅 JS/TS） |
+| `easyConsoleLog.pythonFString` | `false` | Python 日志输出为自描述 f-string：`print(f'🔥 ~ a.py:1 ~ {(x)=}')` |
+| `easyConsoleLog.diagnostics.enabled` | `true` | 是否为未注释的 `console.*` / `print` 调用显示诊断提示 |
 | `easyConsoleLog.updateLineNumbersOnSave` | `false` | 保存时自动刷新生成日志中的文件名和行号 |
 | `easyConsoleLog.diagnostics.severity` | `hint` | 诊断提示级别（`error` / `warning` / `information` / `hint`）；`hint` 只显示淡色标记，不进入 Problems 面板 |
 
-**识别规则**：生成日志通过消息开头的固定文本识别，即模板中第一个非 `${prefix}` 占位符之前的部分（默认为 `🪵 ~ `）。调用函数可以是 `console.log/debug/info/warn/error` 或配置的 `logFunction`（如 `logger.info`）。
+**识别规则**：生成日志通过消息开头的固定文本识别，即模板中第一个非 `${prefix}` 占位符之前的部分（默认为 `🔥 ~ `）。调用函数可以是 `console.log/debug/info/warn/error` 或配置的 `logFunction`（如 `logger.info`）。
 
 ## 代码片段
 
@@ -144,6 +147,6 @@ code --install-extension easy-console-log-<version>.vsix
 - `if (cond) doThing(x)` 这类无花括号的单语句分支，日志会插到整个 `if` 语句之后（追加日志不改变语义，但执行时机在分支结束之后）。
 - `注释/取消注释/删除所有日志` 命令只处理本扩展生成的日志；侧边栏批量按钮会处理当前文件**所有** `console.*` 调用。
 - `console.log(a); foo();` 这类与其他代码同行的调用：注释时会跳过并提示，删除时只删除调用本身。
-- 工作区批量操作扫描 JS/TS/Vue/Svelte 文件。排除目录可通过 `easyConsoleLog.workspace.excludeDirs` 配置，并自动合并 `files.exclude` / `search.exclude`；`*.min.js` 和含超长行的打包产物始终跳过。执行前可选择"仅本扩展生成的日志"或"所有 console.*"，修改后不会自动保存，可在提示中一键保存。
-- 删除 `if (x) console.log(y)` 这类行内调用只删除调用本身，可能留下不完整的语句（如悬空的 `if (x)`），保存前请检查结果。
+- 工作区批量操作扫描 JS/TS/Vue/Svelte/Python 文件。排除目录可通过 `easyConsoleLog.workspace.excludeDirs` 配置，并自动合并 `files.exclude` / `search.exclude`；`*.min.js` 和含超长行的打包产物始终跳过。执行前可选择"仅本扩展生成的日志"或"所有 console.*"，修改后不会自动保存，可在提示中一键保存。
+- `if (x) console.log(y)`、`x => console.log(x)`、`a && console.log(b)` 这类处于表达式位置的行内调用会被识别并展示，但注释和删除都会跳过——删除它们会破坏周边代码。
 - 所有配置项均为 `language-overridable`，可针对不同语言或文件夹分别设置（如为 Python 单独配置 `logFunction`）。

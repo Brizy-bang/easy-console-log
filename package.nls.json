@@ -36,5 +36,10 @@
   "easyConsoleLog.diagnostics.enabled.description": "Show diagnostics markers on console.* lines",
   "easyConsoleLog.diagnostics.severity.description": "Severity level of the console.* diagnostics",
   "easyConsoleLog.updateLineNumbersOnSave.description": "Automatically update file names and line numbers in generated logs when saving",
-  "easyConsoleLog.workspace.excludeDirs.description": "Directory names excluded from workspace scanning (merged with files.exclude / search.exclude)"
+  "easyConsoleLog.workspace.excludeDirs.description": "Directory names excluded from workspace scanning (merged with files.exclude / search.exclude)",
+  "easyConsoleLog.jsonStringify.description": "Wrap the logged expression in JSON.stringify(expr, null, 2) so objects are snapshotted (JS/TS only)",
+  "easyConsoleLog.pythonFString.description": "Emit Python logs as self-documenting f-strings, e.g. print(f'... {(x)=}')",
+  "easyConsoleLog.command.file.commentAll": "Easy Console Log: Comment All Logs in File",
+  "easyConsoleLog.command.file.uncommentAll": "Easy Console Log: Uncomment All Logs in File",
+  "easyConsoleLog.command.file.deleteAll": "Easy Console Log: Delete All Logs in File"
 }

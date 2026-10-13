@@ -2,7 +2,7 @@
   "name": "easy-console-log",
   "displayName": "Easy Console Log",
   "description": "%easyConsoleLog.description%",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "publisher": "Brizy-b",
   "license": "MIT",
   "repository": {
@@ -131,6 +131,21 @@
         "command": "easyConsoleLog.explorer.copyText",
         "title": "%easyConsoleLog.command.explorer.copyText%",
         "icon": "$(copy)"
+      },
+      {
+        "command": "easyConsoleLog.file.commentAll",
+        "title": "%easyConsoleLog.command.file.commentAll%",
+        "icon": "$(comment)"
+      },
+      {
+        "command": "easyConsoleLog.file.uncommentAll",
+        "title": "%easyConsoleLog.command.file.uncommentAll%",
+        "icon": "$(unfold)"
+      },
+      {
+        "command": "easyConsoleLog.file.deleteAll",
+        "title": "%easyConsoleLog.command.file.deleteAll%",
+        "icon": "$(trash)"
       }
     ],
     "snippets": [
@@ -164,7 +179,7 @@
         {
           "id": "easyConsoleLog",
           "title": "%easyConsoleLog.view.container.title%",
-          "icon": "images/icon.svg"
+          "icon": "images/activitybar.svg"
         }
       ]
     },
@@ -173,12 +188,12 @@
         {
           "id": "easyConsoleLog.explorer",
           "name": "%easyConsoleLog.view.explorer.title%",
-          "icon": "images/icon.svg"
+          "icon": "images/activitybar.svg"
         },
         {
           "id": "easyConsoleLog.workspace",
           "name": "%easyConsoleLog.view.workspace.title%",
-          "icon": "images/icon.svg",
+          "icon": "images/activitybar.svg",
           "visibility": "collapsed"
         }
       ]
@@ -266,6 +281,21 @@
           "command": "easyConsoleLog.explorer.copyText",
           "when": "view =~ /^easyConsoleLog\\.(explorer|workspace)$/ && viewItem =~ /^logItem/",
           "group": "inline@3"
+        },
+        {
+          "command": "easyConsoleLog.file.commentAll",
+          "when": "view == easyConsoleLog.workspace && viewItem == logFile",
+          "group": "1_file@1"
+        },
+        {
+          "command": "easyConsoleLog.file.uncommentAll",
+          "when": "view == easyConsoleLog.workspace && viewItem == logFile",
+          "group": "1_file@2"
+        },
+        {
+          "command": "easyConsoleLog.file.deleteAll",
+          "when": "view == easyConsoleLog.workspace && viewItem == logFile",
+          "group": "1_file@3"
         }
       ],
       "commandPalette": [
@@ -279,6 +309,18 @@
         },
         {
           "command": "easyConsoleLog.explorer.copyText",
+          "when": "false"
+        },
+        {
+          "command": "easyConsoleLog.file.commentAll",
+          "when": "false"
+        },
+        {
+          "command": "easyConsoleLog.file.uncommentAll",
+          "when": "false"
+        },
+        {
+          "command": "easyConsoleLog.file.deleteAll",
           "when": "false"
         },
         {
@@ -324,7 +366,7 @@
       "properties": {
         "easyConsoleLog.logMessagePrefix": {
           "type": "string",
-          "default": "🪵",
+          "default": "🔥",
           "scope": "language-overridable",
           "description": "%easyConsoleLog.logMessagePrefix.description%"
         },
@@ -413,6 +455,18 @@
           ],
           "scope": "resource",
           "description": "%easyConsoleLog.workspace.excludeDirs.description%"
+        },
+        "easyConsoleLog.jsonStringify": {
+          "type": "boolean",
+          "default": false,
+          "scope": "language-overridable",
+          "description": "%easyConsoleLog.jsonStringify.description%"
+        },
+        "easyConsoleLog.pythonFString": {
+          "type": "boolean",
+          "default": false,
+          "scope": "language-overridable",
+          "description": "%easyConsoleLog.pythonFString.description%"
         }
       }
     }

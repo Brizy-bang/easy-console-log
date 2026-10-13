@@ -50,6 +50,8 @@ export interface Resolver {
   expressionAt(offset: number): ExprRange | undefined;
   /** Innermost enclosing function / class names at offset, for ${func}/${cls}; empty string when absent */
   namesAt(offset: number): { func: string; cls: string };
+  /** Parameter binding names when the cursor is on a function name; undefined elsewhere */
+  paramsAt(offset: number): string[] | undefined;
 }
 
 /** Infer ScriptKind from the file name; returns undefined for non-JS/TS (caller falls back to line-level insertion) */
@@ -188,6 +190,36 @@ function inferredName(node: ts.FunctionLikeDeclaration | ts.ClassLikeDeclaration
   return '';
 }
 
+/** Collect binding names, incl. destructured ones ({a, b} / [x, y]) */
+function bindingNames(name: ts.BindingName): string[] {
+  if (ts.isIdentifier(name)) {
+    return [name.text];
+  }
+  const out: string[] = [];
+  for (const el of name.elements) {
+    if (!ts.isOmittedExpression(el)) {
+      out.push(...bindingNames(el.name));
+    }
+  }
+  return out;
+}
+
+/** The function-like owned by a name identifier: its own name, or the binding of an anonymous function */
+function ownedFunction(leaf: ts.Node): ts.FunctionLikeDeclaration | undefined {
+  const p = leaf.parent;
+  if (!p) {
+    return undefined;
+  }
+  if (isFunctionLike(p) && p.name === leaf) {
+    return p;
+  }
+  if (ts.isVariableDeclaration(p) || ts.isPropertyAssignment(p)) {
+    const init = p.initializer;
+    return p.name === leaf && init && isFunctionLike(init) ? init : undefined;
+  }
+  return undefined;
+}
+
 /**
  * Create an insertion-point resolver. A text is parsed once and can be reused for multiple offsets.
  */
@@ -317,7 +349,23 @@ export function createResolver(text: string, fileName: string, kind: ts.ScriptKi
     return { func, cls };
   }
 
-  return { resolve, expressionAt, namesAt };
+  function paramsAt(offset: number): string[] | undefined {
+    for (const o of [offset, offset - 1]) {
+      if (o < 0) {
+        continue;
+      }
+      const fn = ownedFunction(innermostNode(sourceFile, o));
+      if (fn) {
+        const names = fn.parameters.flatMap((p) => bindingNames(p.name));
+        if (names.length) {
+          return names;
+        }
+      }
+    }
+    return undefined;
+  }
+
+  return { resolve, expressionAt, namesAt, paramsAt };
 }
 
 /**

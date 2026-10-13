@@ -5,6 +5,7 @@ import {
   changedUncommentAll,
   commentAllLogs,
   deleteAllLogs,
+  initCommands,
   InsertArgs,
   insertLog,
   insertLogWithLevel,
@@ -19,10 +20,12 @@ import {
 import { registerCodeActions } from './codeActions';
 import {
   batchOnCurrentFile,
+  batchOnFileItem,
   ConsoleLogExplorerProvider,
   copyLogText,
   CURRENT_VIEW_ID,
   deleteLogItem,
+  FileItem,
   filterLevels,
   LogItem,
   revealLine,
@@ -33,6 +36,7 @@ import {
 import { registerDiagnostics } from './diagnostics';
 
 export function activate(context: vscode.ExtensionContext): void {
+  initCommands(context);
   // register the sidebar views: current file + workspace
   const provider = new ConsoleLogExplorerProvider();
   const treeView = vscode.window.createTreeView(CURRENT_VIEW_ID, { treeDataProvider: provider });
@@ -75,6 +79,9 @@ export function activate(context: vscode.ExtensionContext): void {
     ['easyConsoleLog.explorer.toggleItem', (item) => toggleLogItem(item as LogItem, onStale)],
     ['easyConsoleLog.explorer.deleteItem', (item) => deleteLogItem(item as LogItem, onStale)],
     ['easyConsoleLog.explorer.copyText', (item) => copyLogText(item as LogItem)],
+    ['easyConsoleLog.file.commentAll', (item) => batchOnFileItem(item as FileItem, 'comment')],
+    ['easyConsoleLog.file.uncommentAll', (item) => batchOnFileItem(item as FileItem, 'uncomment')],
+    ['easyConsoleLog.file.deleteAll', (item) => batchOnFileItem(item as FileItem, 'delete')],
   ];
   for (const [command, handler] of registrations) {
     context.subscriptions.push(vscode.commands.registerCommand(command, handler));

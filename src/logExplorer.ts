@@ -1,15 +1,18 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { BatchMode, CONSOLE_SCAN_METHODS, LogBlock, scanConsole } from './consoleScan';
-import { applyBatchToEditor, docLines, JS_LANGS } from './editUtil';
+import { applyBatchToEditor, docLines, SCAN_LANGS } from './editUtil';
 import { isScannable, readLines, scanWorkspace, WORKSPACE_GLOB } from './workspaceScan';
 
 export const CURRENT_VIEW_ID = 'easyConsoleLog.explorer';
 export const WORKSPACE_VIEW_ID = 'easyConsoleLog.workspace';
 
+/** Python's print shows up as its own pseudo level in the views */
+export const PRINT_LEVEL = 'print';
+
 /** Level filter shared by both views */
 class LevelFilter {
-  private levels = new Set<string>(CONSOLE_SCAN_METHODS);
+  private levels = new Set<string>([...CONSOLE_SCAN_METHODS, PRINT_LEVEL]);
   private emitter = new vscode.EventEmitter<void>();
   readonly onDidChange = this.emitter.event;
 
@@ -31,7 +34,10 @@ class LogGroupItem extends vscode.TreeItem {
     public readonly level: string,
     count: number
   ) {
-    super(`console.${level} (${count})`, vscode.TreeItemCollapsibleState.Expanded);
+    super(
+      `${level === PRINT_LEVEL ? 'print' : `console.${level}`} (${count})`,
+      vscode.TreeItemCollapsibleState.Expanded
+    );
     this.contextValue = 'logGroup';
     this.iconPath = new vscode.ThemeIcon(
       level === 'error' ? 'error' : level === 'warn' ? 'warning' : 'debug-console'
@@ -40,7 +46,7 @@ class LogGroupItem extends vscode.TreeItem {
 }
 
 /** File node (workspace view) */
-class FileItem extends vscode.TreeItem {
+export class FileItem extends vscode.TreeItem {
   constructor(
     public readonly uri: vscode.Uri,
     public readonly blocks: LogBlock[]
@@ -96,7 +102,7 @@ export class ConsoleLogExplorerProvider implements vscode.TreeDataProvider<Curre
   refresh(): void {
     const doc = vscode.window.activeTextEditor?.document;
     this.snapshot =
-      doc && JS_LANGS.has(doc.languageId)
+      doc && SCAN_LANGS.has(doc.languageId)
         ? { uri: doc.uri, blocks: scanConsole(docLines(doc), doc.fileName) }
         : undefined;
     if (this.view) {
@@ -202,7 +208,7 @@ export class WorkspaceLogProvider implements vscode.TreeDataProvider<WorkspaceNo
 
   /** Document content changed in the editor */
   onDocumentChanged(doc: vscode.TextDocument): void {
-    if (JS_LANGS.has(doc.languageId)) {
+    if (SCAN_LANGS.has(doc.languageId)) {
       this.schedule(doc.uri, async () => docLines(doc));
     }
   }
@@ -281,8 +287,8 @@ export class WorkspaceLogProvider implements vscode.TreeDataProvider<WorkspaceNo
 
 /** Open the level filter QuickPick (applies to both views) */
 export async function filterLevels(): Promise<void> {
-  const items = CONSOLE_SCAN_METHODS.map((level) => ({
-    label: `console.${level}`,
+  const items = [...CONSOLE_SCAN_METHODS, PRINT_LEVEL].map((level) => ({
+    label: level === PRINT_LEVEL ? 'print' : `console.${level}`,
     level,
     picked: levelFilter.has(level),
   }));
@@ -335,6 +341,13 @@ export function deleteLogItem(item: LogItem, onStale: () => void): Promise<void>
 /** Copy the log text */
 export async function copyLogText(item: LogItem): Promise<void> {
   await vscode.env.clipboard.writeText(item.info.body);
+}
+
+/** Run a batch operation on all console.* calls in the file of a workspace-view node */
+export async function batchOnFileItem(item: FileItem, mode: BatchMode): Promise<void> {
+  const editor = await vscode.window.showTextDocument(item.uri, { preserveFocus: true });
+  const lines = docLines(editor.document);
+  await applyBatchToEditor(editor, lines, scanConsole(lines, editor.document.fileName), mode);
 }
 
 /** Run a batch operation on all console.* calls in the current file */

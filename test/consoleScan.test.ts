@@ -118,6 +118,16 @@ test('multiple calls on one line are all found', () => {
   assert.equal(blocks[1].inline, true);
 });
 
+test('regex literals do not break paren matching', () => {
+  const t = 'console.log(/\\(x\\)/.test(s), /[/]/);\nif (ok) console.warn(/a,b/);\nconst d = a / b;\n';
+  const blocks = scanConsole(splitLines(t), 'a.ts');
+  assert.equal(blocks.length, 2);
+  assert.equal(blocks[0].endLine, 0);
+  assert.equal(runBatch(t, 'delete').out, 'if (ok) console.warn(/a,b/);\nconst d = a / b;\n');
+  // a call right after a regex on the same line is still inline
+  assert.equal(runBatch('const ok = /x/.test(s); console.log(ok);', 'delete').out, 'const ok = /x/.test(s); ');
+});
+
 test('calls inside comments and strings are not matched', () => {
   const t = [
     'x = 1; // console.log(faked)',
@@ -139,11 +149,11 @@ test('Python: comment print with #', () => {
 
 test('generated-log detection: custom function and multi-line, empty prefix refused', () => {
   const t = [
-    "console.log('🪵 ~ a.ts:1 ~ x:', x);",
+    "console.log('🔥 ~ a.ts:1 ~ x:', x);",
     "console.log('mine', x);",
-    "logger.info('🪵 ~ a.ts:3 ~ y:', y);",
+    "logger.info('🔥 ~ a.ts:3 ~ y:', y);",
     'console.warn(',
-    "  '🪵 ~ a.ts:4 ~ z:',",
+    "  '🔥 ~ a.ts:4 ~ z:',",
     '  z',
     ');',
   ].join('\n');

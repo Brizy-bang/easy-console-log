@@ -2,6 +2,29 @@
 
 All notable changes to the "Easy Console Log" extension are documented in this file.
 
+## [0.5.0] - 2026-10-13
+
+### Added
+
+- **Log function parameters**: with the cursor on a function / method / arrow-binding name, inserting a log
+  produces `console.log('... {a, b}:', {a, b})` on the first line of the body (destructured parameters are
+  flattened; zero-parameter functions log the name itself).
+- **File-level batch operations** in the Workspace view: right-click a file node to comment / uncomment /
+  delete all its logs.
+- **`easyConsoleLog.jsonStringify`**: wrap the logged expression in `JSON.stringify(expr, null, 2)` to snapshot
+  objects (JS/TS only).
+- **`easyConsoleLog.pythonFString`**: emit Python logs as self-documenting f-strings,
+  `print(f'🔥 ~ a.py:1 ~ {(x)=}')`.
+- **Full Python coverage**: `print` calls now appear in the sidebar, diagnostics, Quick Fix and workspace
+  scanning (previously only insert / comment / delete supported `.py`); `print` is a filterable level.
+- The level picked in `Insert Log Statement with Level…` is now persisted across restarts.
+
+### Fixed
+
+- Regex literals inside call arguments (`console.log(/\(/.test(s))`) no longer break paren matching, and a
+  call following a regex on the same line is correctly classified.
+- Multi-identifier selections like `a, 'b\\', c` no longer misjudge string boundaries.
+
 ## [0.4.0] - 2026-10-13
 
 ### Added
@@ -89,7 +112,7 @@ All notable changes to the "Easy Console Log" extension are documented in this f
 
 ### Changed
 
-- **Generated-log detection** is now based on the fixed text at the start of the message template (`🪵 ~ ` by
+- **Generated-log detection** is now based on the fixed text at the start of the message template (`🔥 ~ ` by
   default) and also matches the configured `logFunction`. Batch commands are refused when the marker cannot be
   determined (e.g. empty prefix) to protect hand-written logs.
 - **Diagnostics**: default severity changed from `information` to `hint`; only uncommented calls are marked, the

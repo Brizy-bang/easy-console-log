@@ -90,6 +90,31 @@ test('namesAt: function / class / anonymous arrow / top level', () => {
   assert.deepEqual(names('use(item)'), { func: 'run', cls: 'Bar' });
 });
 
+test('paramsAt: function / method / arrow binding / destructured params / plain variable', () => {
+  const code = [
+    'function foo(a, b = 1, ...rest) {',
+    '  use(a);',
+    '}',
+    'const bar = ({ x, y: [z] }, w) => { use(z); };',
+    'class C {',
+    '  method(m1, m2) { use(m1); }',
+    '}',
+    'const plain = 1;',
+    'call(foo);',
+  ].join('\n');
+  const kind = scriptKindForFile('a.ts');
+  const r = createResolver(code, 'a.ts', kind!);
+  const names = (needle: string) => r.paramsAt(code.indexOf(needle));
+  assert.deepEqual(names('foo(a'), ['a', 'b', 'rest']);
+  assert.deepEqual(names('bar ='), ['x', 'z', 'w']);
+  assert.deepEqual(names('method('), ['m1', 'm2']);
+  assert.equal(names('plain'), undefined);
+  assert.equal(names('call('), undefined);
+  // a zero-param function falls back to logging the name itself
+  const r2 = createResolver('function empty() {}', 'a.ts', kind!);
+  assert.equal(r2.paramsAt(9), undefined);
+});
+
 test('declarationNames: destructuring and multiple declarations', () => {
   assert.deepEqual(declarationNames('const { a, b: c, ...rest } = obj'), ['a', 'c', 'rest']);
   assert.deepEqual(declarationNames('let [x, , y = 1] = arr'), ['x', 'y']);

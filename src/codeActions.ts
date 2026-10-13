@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { batchEdits, BatchMode, blockAtLine, commentTokenFor, LogBlock, scanConsole } from './consoleScan';
 import { DIAGNOSTIC_SOURCE } from './diagnostics';
-import { applyLineEdits, docLines, JS_LANGS, workspaceSink } from './editUtil';
+import { applyLineEdits, docLines, SCAN_LANGS, workspaceSink } from './editUtil';
 
 /** Quick Fix for console.* calls: comment / uncomment / delete this call, plus file-level batch ops */
 export class ConsoleCodeActionProvider implements vscode.CodeActionProvider {
@@ -62,7 +62,7 @@ export class ConsoleCodeActionProvider implements vscode.CodeActionProvider {
 export function registerCodeActions(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
     vscode.languages.registerCodeActionsProvider(
-      [...JS_LANGS].map((language) => ({ language })),
+      [...SCAN_LANGS].map((language) => ({ language })),
       new ConsoleCodeActionProvider(),
       ConsoleCodeActionProvider.metadata
     )

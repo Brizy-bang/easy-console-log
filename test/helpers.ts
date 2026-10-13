@@ -3,7 +3,7 @@ import type { EclConfig } from '../src/config';
 import { batchEdits, BatchMode, LineEdit, scanConsole, splitLines } from '../src/consoleScan';
 
 export const cfg: EclConfig = {
-  prefix: '🪵',
+  prefix: '🔥',
   quote: "'",
   semicolon: true,
   logFunction: 'console.log',
@@ -13,6 +13,8 @@ export const cfg: EclConfig = {
   diagnosticsEnabled: true,
   diagnosticsSeverity: 'hint',
   updateLineNumbersOnSave: false,
+  jsonStringify: false,
+  pythonFString: false,
   workspaceExcludeDirs: [],
 };
 

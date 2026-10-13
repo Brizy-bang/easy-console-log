@@ -21,6 +21,10 @@ export interface EclConfig {
   diagnosticsSeverity: 'error' | 'warning' | 'information' | 'hint';
   /** Whether to refresh file names / line numbers in generated logs on save */
   updateLineNumbersOnSave: boolean;
+  /** Wrap the logged expression in JSON.stringify(expr, null, 2) to snapshot objects (JS/TS only) */
+  jsonStringify: boolean;
+  /** Emit Python logs as self-documenting f-strings: print(f'... {(expr)=}') */
+  pythonFString: boolean;
   /** Directory names excluded from workspace scanning */
   workspaceExcludeDirs: string[];
 }
@@ -28,7 +32,7 @@ export interface EclConfig {
 export function getConfig(scope?: vscode.ConfigurationScope): EclConfig {
   const cfg = vscode.workspace.getConfiguration('easyConsoleLog', scope);
   return {
-    prefix: cfg.get<string>('logMessagePrefix') ?? '🪵',
+    prefix: cfg.get<string>('logMessagePrefix') ?? '🔥',
     quote: cfg.get<string>('quote') ?? "'",
     semicolon: cfg.get<boolean>('addSemicolon') ?? true,
     logFunction: cfg.get<string>('logFunction') ?? 'console.log',
@@ -42,6 +46,8 @@ export function getConfig(scope?: vscode.ConfigurationScope): EclConfig {
         'diagnostics.severity'
       ) ?? 'hint',
     updateLineNumbersOnSave: cfg.get<boolean>('updateLineNumbersOnSave') ?? false,
+    jsonStringify: cfg.get<boolean>('jsonStringify') ?? false,
+    pythonFString: cfg.get<boolean>('pythonFString') ?? false,
     workspaceExcludeDirs: cfg.get<string[]>('workspace.excludeDirs') ?? [],
   };
 }

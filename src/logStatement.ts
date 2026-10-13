@@ -34,7 +34,7 @@ function renderTemplate(template: string, values: Record<string, string>): strin
 /**
  * Fixed text at the start of a generated log message, used as the marker that
  * identifies logs produced by this extension. It is the part of the template
- * before the first placeholder other than ${prefix}, e.g. "🪵 ~ " by default.
+ * before the first placeholder other than ${prefix}, e.g. "🔥 ~ " by default.
  * Returns undefined when the prefix is empty (and the template head uses it) or
  * the result is blank — in that case generated logs cannot be recognized
  * reliably and batch operations are refused to protect hand-written logs.
@@ -78,7 +78,7 @@ export function renderMessage(
 
 /**
  * Build a log statement, e.g.:
- *   console.log('🪵 ~ app.ts:42 ~ userName:', userName);
+ *   console.log('🔥 ~ app.ts:42 ~ userName:', userName);
  */
 export function buildLogStatement(
   expression: string,
@@ -88,9 +88,23 @@ export function buildLogStatement(
   cfg: EclConfig,
   ctx: LogContext = {}
 ): string {
-  const message = renderMessage(expression, fileName, lineNumber, cfg, ctx);
+  const py = isPythonFile(fileName);
   const quote = quoteFor(fileName, cfg);
-  const semi = cfg.semicolon && !isPythonFile(fileName) ? ';' : '';
+  const semi = cfg.semicolon && !py ? ';' : '';
   const fn = logFunctionForFile(fileName, cfg);
-  return `${indent}${fn}(${quote}${escapeForQuote(message, quote)}${quote}, ${expression})${semi}`;
+  if (py && cfg.pythonFString) {
+    // self-documenting f-string: print(f'... {(x)=}'); braces in the message are doubled
+    const ph = '\u0003';
+    const rendered = renderMessage(ph, fileName, lineNumber, cfg, ctx);
+    const expr = `{(${expression.replace(/\s+/g, ' ').trim()})=}`;
+    const body = escapeForQuote(rendered, quote)
+      .replace(/\{/g, '{{')
+      .replace(/\}/g, '}}')
+      .split(ph)
+      .join(expr);
+    return `${indent}${fn}(f${quote}${body}${quote})`;
+  }
+  const message = renderMessage(expression, fileName, lineNumber, cfg, ctx);
+  const arg = cfg.jsonStringify && !py ? `JSON.stringify(${expression}, null, 2)` : expression;
+  return `${indent}${fn}(${quote}${escapeForQuote(message, quote)}${quote}, ${arg})${semi}`;
 }
