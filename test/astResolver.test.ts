@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createResolver, declarationNames, REASON, scriptKindForFile } from '../src/astResolver';
 
-/** 返回按"第 n 次出现的文本"定位的查询函数 */
+/** Return a lookup that finds the nth occurrence of a text */
 function resolverFor(code: string) {
   const kind = scriptKindForFile('a.ts');
   assert.ok(kind !== undefined);
@@ -19,7 +19,7 @@ function resolverFor(code: string) {
 
 const skip = (reason: string) => ({ ok: false, reason, skip: true });
 
-test('作用域：箭头表达式体 / 同行代码块跳过', () => {
+test('scope: arrow expression body / same-line block are skipped', () => {
   const at = resolverFor(
     [
       'const f = (a) => { return a; };',
@@ -39,17 +39,17 @@ test('作用域：箭头表达式体 / 同行代码块跳过', () => {
   assert.equal(at('ids').res.ok, true);
 });
 
-test('类型位置跳过', () => {
+test('type positions are skipped', () => {
   const at = resolverFor('interface A { x: number }');
   assert.deepEqual(at('x').res, skip(REASON.typePosition));
 });
 
-test('case 子句中的语句仍可在其后插入', () => {
+test('statements in a case clause can still be inserted after', () => {
   const at = resolverFor('switch (k) {\n  case 1:\n    foo(a);\n  case 2:\n    break;\n}');
   assert.deepEqual(at('a)').res, { ok: true, target: { mode: 'after', anchorLine: 2, indentLine: 2 } });
 });
 
-test('expressionAt：链式、可选链、关键字、对象键、数字', () => {
+test('expressionAt: chains, optional chains, keywords, object keys, numbers', () => {
   const at = resolverFor('const v = this.state?.list[0].name;\nobj.method(arg);\nconst o = { key: val };\nreturn 42;');
   assert.equal(at('state').expr?.text, 'this.state?.list[0].name');
   assert.equal(at('obj').expr?.text, 'obj');
@@ -57,11 +57,40 @@ test('expressionAt：链式、可选链、关键字、对象键、数字', () =>
   assert.equal(at('key').expr, undefined);
   assert.equal(at('val').expr?.text, 'val');
   assert.equal(at('42').expr, undefined);
-  // 光标紧贴在标识符末尾
+  // cursor right at the end of an identifier
   assert.equal(at(' = this').expr?.text, 'v');
 });
 
-test('declarationNames：解构与多声明', () => {
+test('namesAt: function / class / anonymous arrow / top level', () => {
+  const code = [
+    'class Foo {',
+    '  bar() {',
+    '    const v = this.x;',
+    '  }',
+    '}',
+    'const load = async (id) => {',
+    '  return id;',
+    '};',
+    'top();',
+    'const Bar = class {',
+    '  run() {',
+    '    list.forEach((item) => {',
+    '      use(item);',
+    '    });',
+    '  }',
+    '};',
+  ].join('\n');
+  const kind = scriptKindForFile('a.ts');
+  const r = createResolver(code, 'a.ts', kind!);
+  const names = (needle: string) => r.namesAt(code.indexOf(needle));
+  assert.deepEqual(names('this.x'), { func: 'bar', cls: 'Foo' });
+  assert.deepEqual(names('return id'), { func: 'load', cls: '' });
+  assert.deepEqual(names('top'), { func: '', cls: '' });
+  // class expression uses its binding name; an anonymous callback falls through to the outer method
+  assert.deepEqual(names('use(item)'), { func: 'run', cls: 'Bar' });
+});
+
+test('declarationNames: destructuring and multiple declarations', () => {
   assert.deepEqual(declarationNames('const { a, b: c, ...rest } = obj'), ['a', 'c', 'rest']);
   assert.deepEqual(declarationNames('let [x, , y = 1] = arr'), ['x', 'y']);
   assert.deepEqual(declarationNames('var m = 1, n = 2'), ['m', 'n']);

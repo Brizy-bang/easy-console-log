@@ -16,10 +16,13 @@
 | `Easy Console Log: 删除所有日志` | `Alt + Shift + D` | 删除当前文件内所有生成的日志（含被注释的） |
 | `Easy Console Log: 切换当前行日志注释` | `Ctrl + Alt + C` | 切换光标所在（或选区覆盖的）console 调用的注释状态，支持多光标 |
 | `Easy Console Log: 注释/取消注释/删除工作区所有日志` | — | 对整个工作区批量操作 |
+| `Easy Console Log: 注释/取消注释/删除 Git 变更文件中的所有日志` | — | 只对有 Git 变更（已修改 / 已暂存 / 未跟踪）的文件批量操作，适合提交前清理调试日志 |
 
 选中 `a, b, c` 这类逗号分隔的多个标识符会生成 `console.log({a, b, c})`；选中 `const x = 1` 会自动取 `x`，选中 `const { a, b } = obj` 会生成 `console.log({a, b})`。
 
 所有注释 / 取消注释 / 删除操作都以**完整调用**为单位，跨多行的 `console.log(...)`（如被 Prettier 折行）会整体处理，不会留下半截语法错误的代码。
+
+除 `log / info / debug / warn / error / trace` 外，扫描与清理还会识别 `table`、`dir`、`count(Reset)`、`group(Collapsed/End)`、`time(Log/End)`、`assert`。不在行首的调用（`if (x) console.log(y)`、`foo(); console.log(x)`、`x => console.log(x)`）也能被识别。注释时会跳过（整行注释会破坏周边代码）；删除时只删调用本身，且仅当它是独立语句（前面是行首、`;`、`{` 或 `}`，结尾是 `;`、`}` 或行尾）时才删除。`if (x) console.log(y)`、`x => console.log(x)`、`a && console.log(b)` 这类处于表达式位置的调用会被跳过，避免改坏代码或悄悄改变逻辑。字符串与注释内部的调用不会被误判。
 
 想为某个级别绑定独立快捷键，可在 `keybindings.json` 中给 `easyConsoleLog.insert` 传参：
 
@@ -55,6 +58,16 @@
 const userName = 'devin';
 console.log('🪵 ~ app.ts:2 ~ userName:', userName);
 ```
+
+使用 `${prefix} ~ ${func} ~ ${expr}:` 这类模板时，消息会带上外层函数名：
+
+```ts
+function fetchUser(id: string) {
+  console.log('🪵 ~ fetchUser ~ id:', id);
+}
+```
+
+匿名函数和类表达式取其绑定名（`const load = () => {}` → `load`，`const Foo = class {}` → `Foo`）；没有绑定名的匿名回调（如 `list.forEach((x) => { ... })`）会被跳过，取最近的具名外层函数。
 
 光标放在 `this.state.list`、`a?.b`、`a['key']` 这类成员表达式上也能完整识别；光标在关键字、数字或对象字面量的键名上时不会生成日志。支持多光标，多条日志中的行号会互相校正。
 
@@ -93,7 +106,8 @@ console.log('🪵 ~ app.ts:2 ~ userName:', userName);
 | `easyConsoleLog.logFunction` | `console.log` | 日志函数，可改为 `console.debug` 等 |
 | `easyConsoleLog.includeFilename` | `true` | 消息中是否包含文件名 |
 | `easyConsoleLog.includeLineNumber` | `true` | 消息中是否包含行号 |
-| `easyConsoleLog.messageTemplate` | `${prefix} ~ ${location} ~ ${expr}:` | 消息模板，占位符：`${prefix}` `${file}` `${line}` `${location}` `${expr}` |
+| `easyConsoleLog.messageTemplate` | `${prefix} ~ ${location} ~ ${expr}:` | 消息模板，占位符：`${prefix}` `${file}` `${line}` `${location}` `${func}` `${cls}` `${expr}`（`${func}`/`${cls}` 为外层函数名 / 类名，仅 JS/TS/Vue/Svelte） |
+| `easyConsoleLog.workspace.excludeDirs` | `node_modules`、`dist`、`out`、`build`、`.git`、`vendor`、`coverage`、`.next`、`.nuxt`、`.output`、`.svelte-kit` | 工作区扫描时排除的目录名；自动合并 `files.exclude` / `search.exclude` |
 | `easyConsoleLog.diagnostics.enabled` | `true` | 是否为未注释的 `console.*` 调用显示诊断提示（仅 JS/TS/Vue/Svelte） |
 | `easyConsoleLog.updateLineNumbersOnSave` | `false` | 保存时自动刷新生成日志中的文件名和行号 |
 | `easyConsoleLog.diagnostics.severity` | `hint` | 诊断提示级别（`error` / `warning` / `information` / `hint`）；`hint` 只显示淡色标记，不进入 Problems 面板 |
@@ -108,7 +122,7 @@ console.log('🪵 ~ app.ts:2 ~ userName:', userName);
 
 ```bash
 npm install
-npm run compile   # 或 npm run watch 持续编译
+npm run esbuild   # 打包到 out/；npm run watch 持续构建（esbuild --watch）
 npm run typecheck # 类型检查（含测试代码）
 npm run lint      # ESLint
 npm test          # 单元测试（esbuild 打包后用 node:test 运行）
@@ -130,4 +144,6 @@ code --install-extension easy-console-log-<version>.vsix
 - `if (cond) doThing(x)` 这类无花括号的单语句分支，日志会插到整个 `if` 语句之后（追加日志不改变语义，但执行时机在分支结束之后）。
 - `注释/取消注释/删除所有日志` 命令只处理本扩展生成的日志；侧边栏批量按钮会处理当前文件**所有** `console.*` 调用。
 - `console.log(a); foo();` 这类与其他代码同行的调用：注释时会跳过并提示，删除时只删除调用本身。
-- 工作区批量操作扫描 JS/TS/Vue/Svelte 文件，跳过 `node_modules`、`dist`、`coverage`、`.next` 等目录以及 `*.min.js` 和含超长行的打包产物；执行前可选择"仅本扩展生成的日志"或"所有 console.*"，修改后不会自动保存，可在提示中一键保存。
+- 工作区批量操作扫描 JS/TS/Vue/Svelte 文件。排除目录可通过 `easyConsoleLog.workspace.excludeDirs` 配置，并自动合并 `files.exclude` / `search.exclude`；`*.min.js` 和含超长行的打包产物始终跳过。执行前可选择"仅本扩展生成的日志"或"所有 console.*"，修改后不会自动保存，可在提示中一键保存。
+- 删除 `if (x) console.log(y)` 这类行内调用只删除调用本身，可能留下不完整的语句（如悬空的 `if (x)`），保存前请检查结果。
+- 所有配置项均为 `language-overridable`，可针对不同语言或文件夹分别设置（如为 Python 单独配置 `logFunction`）。

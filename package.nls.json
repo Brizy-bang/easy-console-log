@@ -10,6 +10,9 @@
   "easyConsoleLog.command.workspace.commentAll": "Easy Console Log: Comment All Logs in Workspace",
   "easyConsoleLog.command.workspace.uncommentAll": "Easy Console Log: Uncomment All Logs in Workspace",
   "easyConsoleLog.command.workspace.deleteAll": "Easy Console Log: Delete All Logs in Workspace",
+  "easyConsoleLog.command.changed.commentAll": "Easy Console Log: Comment All Logs in Git Changed Files",
+  "easyConsoleLog.command.changed.uncommentAll": "Easy Console Log: Uncomment All Logs in Git Changed Files",
+  "easyConsoleLog.command.changed.deleteAll": "Easy Console Log: Delete All Logs in Git Changed Files",
   "easyConsoleLog.command.workspace.refresh": "Refresh",
   "easyConsoleLog.command.explorer.commentAll": "Comment All",
   "easyConsoleLog.command.explorer.uncommentAll": "Uncomment All",
@@ -29,8 +32,9 @@
   "easyConsoleLog.logFunction.description": "Log function used for generated statements, e.g. console.log / console.debug / console.warn",
   "easyConsoleLog.includeFilename.description": "Include the file name in the log message",
   "easyConsoleLog.includeLineNumber.description": "Include the line number in the log message",
-  "easyConsoleLog.messageTemplate.description": "Log message template. Placeholders: ${prefix} ${file} ${line} ${location} ${expr}",
+  "easyConsoleLog.messageTemplate.description": "Log message template. Placeholders: ${prefix} ${file} ${line} ${location} ${func} ${cls} ${expr}",
   "easyConsoleLog.diagnostics.enabled.description": "Show diagnostics markers on console.* lines",
   "easyConsoleLog.diagnostics.severity.description": "Severity level of the console.* diagnostics",
-  "easyConsoleLog.updateLineNumbersOnSave.description": "Automatically update file names and line numbers in generated logs when saving"
+  "easyConsoleLog.updateLineNumbersOnSave.description": "Automatically update file names and line numbers in generated logs when saving",
+  "easyConsoleLog.workspace.excludeDirs.description": "Directory names excluded from workspace scanning (merged with files.exclude / search.exclude)"
 }

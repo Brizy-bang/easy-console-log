@@ -10,6 +10,7 @@ import {
   commentTokenFor,
   CONSOLE_LEVELS,
   isApplicable,
+  isSkipped,
   LineEdit,
   LogBlock,
   scanConsole,
@@ -26,20 +27,20 @@ import {
   workspaceSink,
 } from './editUtil';
 import { lineNumberEdits } from './lineNumbers';
-import { scanWorkspace } from './workspaceScan';
+import { isScannable, scanFiles, scanWorkspace } from './workspaceScan';
 
 type AstModule = typeof import('./astResolver');
 let astModule: Promise<AstModule> | undefined;
 
-/** TypeScript 编译器体积较大，首次需要时再加载，避免拖慢扩展激活 */
+/** The TypeScript compiler is heavy; load it on first use to keep activation fast */
 function loadAst(): Promise<AstModule> {
   return (astModule ??= import('./astResolver'));
 }
 
-/** 匹配成员表达式 / 链式访问，如 a.b.c、a?.b、a['x']（无 AST 时的降级方案） */
+/** Match member / chain access like a.b.c, a?.b, a['x'] (fallback when no AST is available) */
 const MEMBER_EXPR = /[$\w]+(?:\??\.[$\w]+|\[(?:\d+|["'`][^\]"'`]*["'`])\])*/;
 
-/** 降级匹配时需要排除的关键字（JS + Python） */
+/** Keywords excluded by the fallback matcher (JS + Python) */
 const KEYWORDS = new Set(
   (
     'const let var function return if else for while do switch case break continue new typeof ' +
@@ -63,7 +64,7 @@ function showMarkerWarning(): void {
   );
 }
 
-/** 按顶层逗号拆分表达式，忽略括号/引号内的逗号 */
+/** Split an expression on top-level commas, ignoring commas inside parens/quotes */
 function splitTopLevelCommas(expr: string): string[] {
   const parts: string[] = [];
   let depth = 0;
@@ -91,11 +92,11 @@ function splitTopLevelCommas(expr: string): string[] {
 }
 
 interface DocResolver extends Resolver {
-  /** offset 是否处于可做 AST 分析的区域（Vue/Svelte 中即 <script> 块内） */
+  /** Whether the offset lies in an AST-analyzable region (i.e. inside a <script> block for Vue/Svelte) */
   covers(offset: number): boolean;
 }
 
-/** 构建针对当前文档的解析器，支持 Vue/Svelte 的多个 <script> 块 */
+/** Build a resolver for the document, supporting multiple <script> blocks in Vue/Svelte */
 async function buildResolver(doc: vscode.TextDocument): Promise<DocResolver | undefined> {
   if (!AST_FILE_RE.test(doc.fileName)) {
     return undefined;
@@ -142,14 +143,18 @@ async function buildResolver(doc: vscode.TextDocument): Promise<DocResolver | un
       const r = b?.resolver.expressionAt(offset - b.start);
       return b && r ? { ...r, start: r.start + b.start, end: r.end + b.start } : undefined;
     },
+    namesAt(offset) {
+      const b = find(offset);
+      return b ? b.resolver.namesAt(offset - b.start) : { func: '', cls: '' };
+    },
   };
 }
 
-/** 从选中文本得到要输出的表达式 */
+/** Derive the expression to log from the selected text */
 async function expressionFromSelection(raw: string): Promise<string | undefined> {
   const expr = raw.trim().replace(/;+\s*$/, '');
   if (/^(?:const|let|var)\s/.test(expr)) {
-    // 选中整条声明时提取绑定名，支持解构：const { a, b } = obj → {a, b}
+    // a full declaration selection extracts binding names, incl. destructuring: const { a, b } = obj -> {a, b}
     const names = (await loadAst()).declarationNames(expr);
     if (!names) {
       return undefined;
@@ -158,13 +163,13 @@ async function expressionFromSelection(raw: string): Promise<string | undefined>
   }
   const parts = splitTopLevelCommas(expr);
   if (parts.length > 1 && parts.every((p) => IDENT_RE.test(p))) {
-    // 多个标识符 → console.log({a, b})
+    // multiple identifiers -> console.log({a, b})
     return `{${parts.join(', ')}}`;
   }
   return expr || undefined;
 }
 
-/** 取光标处的表达式：AST 可用时以 AST 为准，否则用正则降级 */
+/** Expression under the cursor: prefer AST when available, otherwise fall back to regex */
 function expressionAtCursor(
   doc: vscode.TextDocument,
   pos: vscode.Position,
@@ -189,22 +194,26 @@ function expressionAtCursor(
 interface Target {
   expression: string;
   mode: InsertMode;
-  /** 插入锚点行（0-based） */
+  /** Anchor line for insertion (0-based) */
   anchorLine: number;
-  /** 日志语句的缩进 */
+  /** Indent of the log statement */
   indent: string;
+  /** Enclosing function / class names (for the ${func}/${cls} placeholders) */
+  func: string;
+  cls: string;
 }
 
 export type ConsoleLevel = (typeof CONSOLE_LEVELS)[number];
 
-/** 命令参数，可在 keybindings.json 中通过 args 传入，如 { "level": "warn" } */
+/** Command args, passable via keybindings.json args, e.g. { "level": "warn" } */
 export interface InsertArgs {
   level?: ConsoleLevel;
 }
 
 const isLevel = (v: unknown): v is ConsoleLevel => CONSOLE_LEVELS.includes(v as ConsoleLevel);
 
-/** 为选中/光标下的表达式插入日志语句；指定 level 时使用 console.<level>（Python 中忽略） */
+/** Insert a log statement for the selected / under-cursor expression;
+ * a given level uses console.<level> (ignored in Python) */
 export async function insertLog(args?: InsertArgs): Promise<void> {
   const editor = vscode.window.activeTextEditor;
   if (!editor) {
@@ -213,7 +222,7 @@ export async function insertLog(args?: InsertArgs): Promise<void> {
   const doc = editor.document;
   const py = isPythonFile(doc.fileName);
   const level = args?.level;
-  const cfg = { ...getConfig(), ...(isLevel(level) && !py ? { logFunction: `console.${level}` } : {}) };
+  const cfg = { ...getConfig(doc), ...(isLevel(level) && !py ? { logFunction: `console.${level}` } : {}) };
   const fileName = path.basename(doc.fileName);
 
   const resolver = await buildResolver(doc);
@@ -221,7 +230,7 @@ export async function insertLog(args?: InsertArgs): Promise<void> {
     ? ' '.repeat(Number(editor.options.tabSize) || 4)
     : '\t';
   const indentOf = (line: number) => doc.lineAt(line).text.match(/^\s*/)?.[0] ?? '';
-  // 降级插入：Python 中以冒号结尾的行（def/if/for 等）需要缩进一级
+  // fallback insertion: in Python, lines ending with ':' (def/if/for ...) need one more indent level
   const fallbackIndent = (line: number) =>
     indentOf(line) + (py && /:\s*(#.*)?$/.test(doc.lineAt(line).text) ? indentUnit : '');
 
@@ -231,9 +240,9 @@ export async function insertLog(args?: InsertArgs): Promise<void> {
 
   for (const sel of editor.selections) {
     let expression: string | undefined;
-    // 用于 AST 定位的位置（表达式首字符）
+    // position used for AST resolution (first char of the expression)
     let probe: vscode.Position;
-    // 无 AST 时的降级插入行
+    // fallback insertion line when no AST is available
     let fallbackLine: number;
 
     if (!sel.isEmpty) {
@@ -254,19 +263,27 @@ export async function insertLog(args?: InsertArgs): Promise<void> {
       continue;
     }
 
-    const res = resolver?.resolve(doc.offsetAt(probe));
+    const probeOffset = doc.offsetAt(probe);
+    const res = resolver?.resolve(probeOffset);
+    const names = resolver?.namesAt(probeOffset) ?? { func: '', cls: '' };
     let target: Target;
     if (res && res.ok) {
       const { mode, anchorLine, indentLine } = res.target;
       const indent = indentOf(indentLine) + (mode === 'inside-start' ? indentUnit : '');
-      target = { expression, mode, anchorLine, indent };
+      target = { expression, mode, anchorLine, indent, ...names };
     } else if (res && !res.ok && res.skip) {
       skippedReasons.add(res.reason);
       continue;
     } else {
-      target = { expression, mode: 'after', anchorLine: fallbackLine, indent: fallbackIndent(fallbackLine) };
+      target = {
+        expression,
+        mode: 'after',
+        anchorLine: fallbackLine,
+        indent: fallbackIndent(fallbackLine),
+        ...names,
+      };
     }
-    // 多个光标落在同一语句、同一表达式时只插一次
+    // multiple cursors on the same statement and same expression insert only once
     const key = `${target.mode}:${target.anchorLine}:${expression}`;
     if (!seen.has(key)) {
       seen.add(key);
@@ -284,8 +301,8 @@ export async function insertLog(args?: InsertArgs): Promise<void> {
     return;
   }
 
-  // 按最终落点排序：after 插在锚点行之后，before 插在锚点行之前；
-  // 同一位置 after(L) 先于 before(L+1)。排序后第 i 条日志之前恰有 i 条新插入的行。
+  // Sort by final landing spot: 'after' inserts below the anchor line, 'before' above it;
+  // at the same spot after(L) precedes before(L+1). After sorting, the i-th log has exactly i new lines before it.
   const slot = (t: Target) => (t.mode === 'before' ? t.anchorLine - 0.5 : t.anchorLine + 0.5);
   const isBefore = (t: Target) => Number(t.mode === 'before');
   const ordered = targets
@@ -296,7 +313,10 @@ export async function insertLog(args?: InsertArgs): Promise<void> {
   await editor.edit((builder) => {
     ordered.forEach((t, idx) => {
       const base = t.mode === 'before' ? t.anchorLine : t.anchorLine + 1;
-      const stmt = buildLogStatement(t.expression, fileName, base + idx + 1, t.indent, cfg);
+      const stmt = buildLogStatement(t.expression, fileName, base + idx + 1, t.indent, cfg, {
+        func: t.func,
+        cls: t.cls,
+      });
       if (t.mode === 'before') {
         builder.insert(new vscode.Position(t.anchorLine, 0), `${stmt}\n`);
       } else {
@@ -312,7 +332,7 @@ export async function insertLog(args?: InsertArgs): Promise<void> {
 
 let lastLevel: ConsoleLevel = 'log';
 
-/** 先选择 console 级别再插入日志；上次选择的级别排在最前 */
+/** Pick a console level first, then insert; the last choice is listed first */
 export async function insertLogWithLevel(): Promise<void> {
   const doc = vscode.window.activeTextEditor?.document;
   if (!doc) {
@@ -332,14 +352,14 @@ export async function insertLogWithLevel(): Promise<void> {
   }
 }
 
-/** 刷新当前文件中生成日志的文件名与行号 */
+/** Refresh file names and line numbers in generated logs of the current file */
 export async function updateLineNumbers(): Promise<void> {
   const editor = vscode.window.activeTextEditor;
   if (!editor) {
     return;
   }
   const doc = editor.document;
-  const r = lineNumberEdits(docLines(doc), path.basename(doc.fileName), getConfig());
+  const r = lineNumberEdits(docLines(doc), path.basename(doc.fileName), getConfig(doc));
   if (!r) {
     showMarkerWarning();
     return;
@@ -352,12 +372,12 @@ export async function updateLineNumbers(): Promise<void> {
   vscode.window.showInformationMessage(vscode.l10n.t('Easy Console Log: updated {0} log(s)', r.count));
 }
 
-/** 保存时自动刷新行号（需开启 easyConsoleLog.updateLineNumbersOnSave） */
+/** Auto-refresh line numbers on save (requires easyConsoleLog.updateLineNumbersOnSave) */
 export function registerLineNumbersOnSave(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
     vscode.workspace.onWillSaveTextDocument((e) => {
-      const cfg = getConfig();
       const doc = e.document;
+      const cfg = getConfig(doc);
       if (!cfg.updateLineNumbersOnSave || !(JS_LANGS.has(doc.languageId) || doc.languageId === 'python')) {
         return;
       }
@@ -369,14 +389,14 @@ export function registerLineNumbersOnSave(context: vscode.ExtensionContext): voi
   );
 }
 
-/** 对当前文件中由本扩展生成的日志执行批量操作 */
+/** Run a batch operation on the logs generated by this extension in the current file */
 async function runOnGenerated(mode: BatchMode): Promise<void> {
   const editor = vscode.window.activeTextEditor;
   if (!editor) {
     return;
   }
   const lines = docLines(editor.document);
-  const blocks = scanGenerated(lines, editor.document.fileName, getConfig());
+  const blocks = scanGenerated(lines, editor.document.fileName, getConfig(editor.document));
   if (!blocks) {
     showMarkerWarning();
     return;
@@ -384,22 +404,23 @@ async function runOnGenerated(mode: BatchMode): Promise<void> {
   await applyBatchToEditor(editor, lines, blocks, mode);
 }
 
-/** 注释掉文件内所有生成的日志 */
+/** Comment out all generated logs in the file */
 export function commentAllLogs(): Promise<void> {
   return runOnGenerated('comment');
 }
 
-/** 取消注释文件内所有被注释的生成日志 */
+/** Uncomment all commented generated logs in the file */
 export function uncommentAllLogs(): Promise<void> {
   return runOnGenerated('uncomment');
 }
 
-/** 删除文件内所有生成的日志（含被注释的） */
+/** Delete all generated logs in the file (including commented ones) */
 export function deleteAllLogs(): Promise<void> {
   return runOnGenerated('delete');
 }
 
-/** 切换光标所在（或选区覆盖的）console 调用的注释状态，支持多行调用与多光标 */
+/** Toggle the comment of console calls under the cursor / covered by the selection;
+ * supports multi-line calls and multi-cursor */
 export async function toggleCurrentLog(): Promise<void> {
   const editor = vscode.window.activeTextEditor;
   if (!editor) {
@@ -442,57 +463,80 @@ export async function toggleCurrentLog(): Promise<void> {
 interface FileHits {
   uri: vscode.Uri;
   lines: string[];
-  /** 所有 console.* 中需要处理的块 */
+  /** Blocks to process among all console.* calls */
   all: LogBlock[];
-  /** 本扩展生成的日志中需要处理的块 */
+  /** Blocks to process among logs generated by this extension */
   generated: LogBlock[];
 }
 
-/** 扫描工作区，返回有命中的文件；用户取消时返回 undefined */
-function scanWorkspaceHits(mode: BatchMode): Thenable<FileHits[] | undefined> {
-  const cfg = getConfig();
+/** Where a multi-file batch operation runs */
+type BatchScope = 'workspace' | 'changed';
+
+/** Scan the workspace (or the given files) and return files with hits; undefined when the user cancels */
+function scanHits(mode: BatchMode, scope: BatchScope, uris?: readonly vscode.Uri[]): Thenable<FileHits[] | undefined> {
+  const pick = (uri: vscode.Uri, lines: string[]): FileHits | undefined => {
+    const all = scanConsole(lines, uri.path).filter((b) => isApplicable(b, mode));
+    // when generated logs can't be recognized (e.g. empty prefix) scanGenerated returns undefined
+    // and the "generated logs only" option is not offered
+    const generated = (scanGenerated(lines, uri.path, getConfig(uri)) ?? []).filter((b) => isApplicable(b, mode));
+    return all.length || generated.length ? { uri, lines, all, generated } : undefined;
+  };
   return vscode.window.withProgress(
     {
       location: vscode.ProgressLocation.Notification,
-      title: vscode.l10n.t('Easy Console Log: scanning the workspace…'),
+      title:
+        scope === 'workspace'
+          ? vscode.l10n.t('Easy Console Log: scanning the workspace…')
+          : vscode.l10n.t('Easy Console Log: scanning Git changed files…'),
       cancellable: true,
     },
     (progress, token) =>
-      scanWorkspace(
-        (uri, lines) => {
-          const all = scanConsole(lines, uri.path).filter((b) => isApplicable(b, mode));
-          // 前缀为空等无法识别的配置下，scanGenerated 返回 undefined，"仅生成的日志"选项不出现
-          const generated = (scanGenerated(lines, uri.path, cfg) ?? []).filter((b) => isApplicable(b, mode));
-          return all.length || generated.length ? { uri, lines, all, generated } : undefined;
-        },
-        token,
-        progress
-      )
+      uris ? scanFiles(uris, pick, token, progress) : scanWorkspace(pick, token, progress)
   );
 }
 
-/** 对整个工作区执行批量操作，执行前让用户选择范围（仅生成的日志 / 所有 console.*） */
-async function batchOnWorkspace(mode: BatchMode): Promise<void> {
-  const hits = await scanWorkspaceHits(mode);
-  if (!hits) {
-    return;
-  }
+function noLogsMessage(scope: BatchScope, verb: string): string {
+  return scope === 'workspace'
+    ? vscode.l10n.t('Easy Console Log: no logs to {0} in the workspace', verb)
+    : vscode.l10n.t('Easy Console Log: no logs to {0} in Git changed files', verb);
+}
+
+function chooseMessage(scope: BatchScope, verb: string): string {
+  return scope === 'workspace'
+    ? vscode.l10n.t('Easy Console Log: choose which logs to {0} in the workspace', verb)
+    : vscode.l10n.t('Easy Console Log: choose which logs to {0} in Git changed files', verb);
+}
+
+/** Run a batch operation on a hits list, after letting the user pick the scope (generated only / all console.*) */
+async function applyBatchHits(mode: BatchMode, hits: FileHits[], scope: BatchScope): Promise<void> {
   const verb = modeVerb(mode);
+  // count only blocks that will actually be processed; unsafe ones are reported as skipped afterwards
   const sum = (pick: (h: FileHits) => LogBlock[]) => {
-    const files = hits.filter((h) => pick(h).length > 0);
-    return { files: files.length, logs: files.reduce((n, h) => n + pick(h).length, 0) };
+    let files = 0;
+    let logs = 0;
+    let skipped = 0;
+    for (const h of hits) {
+      const blocks = pick(h);
+      const n = blocks.filter((b) => !isSkipped(b, mode)).length;
+      files += n ? 1 : 0;
+      logs += n;
+      skipped += blocks.length - n;
+    }
+    return { files, logs, skipped };
   };
   const gen = sum((h) => h.generated);
   const all = sum((h) => h.all);
   if (gen.logs === 0 && all.logs === 0) {
-    vscode.window.showInformationMessage(vscode.l10n.t('Easy Console Log: no logs to {0} in the workspace', verb));
+    vscode.window.showInformationMessage(
+      all.skipped ? batchResultMessage(mode, 0, all.skipped) : noLogsMessage(scope, verb)
+    );
     return;
   }
 
   const GEN = vscode.l10n.t('Generated logs only ({0})', gen.logs);
   const ALL = vscode.l10n.t('All console.* ({0})', all.logs);
   const choice = await vscode.window.showWarningMessage(
-    vscode.l10n.t('Easy Console Log: choose which logs to {0} in the workspace', verb),
+    chooseMessage(scope, verb),
     {
       modal: true,
       detail: vscode.l10n.t(
@@ -546,6 +590,94 @@ async function batchOnWorkspace(mode: BatchMode): Promise<void> {
         .map((d) => d.save())
     );
   }
+}
+
+/** Run a batch operation across the whole workspace */
+async function batchOnWorkspace(mode: BatchMode): Promise<void> {
+  const hits = await scanHits(mode, 'workspace');
+  if (hits) {
+    await applyBatchHits(mode, hits, 'workspace');
+  }
+}
+
+/** Minimal structural typing of the vscode.git extension API (fields may be missing in older versions) */
+interface GitApi {
+  repositories: {
+    state: {
+      workingTreeChanges?: { uri: vscode.Uri }[];
+      indexChanges?: { uri: vscode.Uri }[];
+      mergeChanges?: { uri: vscode.Uri }[];
+      untrackedChanges?: { uri: vscode.Uri }[];
+    };
+  }[];
+}
+
+interface GitExtension {
+  enabled?: boolean;
+  getAPI(version: 1): GitApi;
+}
+
+/** Get the vscode.git API, activating the extension if needed; undefined when Git is missing or disabled */
+async function gitApi(): Promise<GitApi | undefined> {
+  const ext = vscode.extensions.getExtension<GitExtension>('vscode.git');
+  if (!ext) {
+    return undefined;
+  }
+  try {
+    const exports = ext.isActive ? ext.exports : await ext.activate();
+    // getAPI throws when git.enabled is false
+    return exports && exports.enabled !== false ? exports.getAPI(1) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Collect scannable files with Git changes (working tree / index / merge / untracked) */
+function changedUris(api: GitApi): vscode.Uri[] {
+  const uris = new Map<string, vscode.Uri>();
+  for (const { state } of api.repositories) {
+    const changes = [
+      ...(state.workingTreeChanges ?? []),
+      ...(state.indexChanges ?? []),
+      ...(state.mergeChanges ?? []),
+      ...(state.untrackedChanges ?? []),
+    ];
+    for (const c of changes) {
+      if (isScannable(c.uri)) {
+        uris.set(c.uri.toString(), c.uri);
+      }
+    }
+  }
+  return [...uris.values()];
+}
+
+/** Run a batch operation only on Git-changed files (pre-commit debug-log cleanup) */
+async function batchOnChanged(mode: BatchMode): Promise<void> {
+  const api = await gitApi();
+  if (!api) {
+    vscode.window.showWarningMessage(vscode.l10n.t('Easy Console Log: Git extension is not available'));
+    return;
+  }
+  if (!api.repositories.length) {
+    vscode.window.showWarningMessage(vscode.l10n.t('Easy Console Log: no Git repository is open'));
+    return;
+  }
+  const hits = await scanHits(mode, 'changed', changedUris(api));
+  if (hits) {
+    await applyBatchHits(mode, hits, 'changed');
+  }
+}
+
+export function changedCommentAll(): Promise<void> {
+  return batchOnChanged('comment');
+}
+
+export function changedUncommentAll(): Promise<void> {
+  return batchOnChanged('uncomment');
+}
+
+export function changedDeleteAll(): Promise<void> {
+  return batchOnChanged('delete');
 }
 
 export function workspaceCommentAll(): Promise<void> {

@@ -2,6 +2,43 @@
 
 All notable changes to the "Easy Console Log" extension are documented in this file.
 
+## [0.4.0] - 2026-10-13
+
+### Added
+
+- **Git changed files batch operations**: `Comment/Uncomment/Delete All Logs in Git Changed Files` run the
+  workspace batch flow only on files with Git changes (modified, staged, merge, untracked) — ideal for
+  pre-commit cleanup. Available in the Workspace view "…" menu and the Command Palette. The Git extension is
+  activated on demand; a clear message is shown when Git is disabled or no repository is open.
+- **New template placeholders** `${func}` and `${cls}`: resolve to the enclosing function / class name via AST
+  (anonymous functions and class expressions use their binding name; unnamed callbacks fall through to the
+  outer function). `Update Log Line Numbers` preserves their original text.
+- **Wider console coverage**: `console.table`, `dir`, `count(Reset)`, `group(Collapsed/End)`, `time(Log/End)`
+  and `assert` are now scanned, listed in the sidebar and diagnostics, and are filterable via Filter Levels.
+- **Inline call detection**: calls that don't start their line (`if (x) console.log(y)`,
+  `foo(); console.log(x)`, `x => console.log(x)`, multiple calls on one line) are now found. They are skipped
+  when commenting; deleting removes only the call itself and only when it is a standalone statement — calls in
+  expression position (`if (x) console.log(y)`, `x => console.log(x)`, `a && console.log(b)`) are skipped.
+  Calls inside strings or comments are not detected.
+- `easyConsoleLog.workspace.excludeDirs` setting (per folder); the workspace scan also merges `files.exclude` and
+  `search.exclude` patterns of each folder (custom `findFiles` excludes no longer drop the user's defaults).
+
+### Fixed
+
+- A line-start call followed by other code without a `;` (e.g. `console.log(a) || fallback()`) is no longer
+  partially deleted.
+- Workspace batch confirmation counts now exclude logs that will be skipped.
+
+### Changed
+
+- All settings are now `language-overridable` and read with the document / resource scope, so per-language and
+  per-folder overrides work (e.g. a different `logFunction` for Python).
+- Workspace scanning reads files with limited concurrency instead of sequentially.
+- `npm run watch` / `compile` now use esbuild (with sourcemaps), so the F5 debug build matches the published
+  bundle; the build task uses the `$esbuild-watch` problem matcher.
+- New CI workflow runs typecheck, lint, unit tests and a bundle smoke test (`npm run smoke`,
+  `scripts/smoke-bundle.cjs`) on every push / pull request.
+
 ## [0.3.2] - 2026-10-10
 
 ### Fixed

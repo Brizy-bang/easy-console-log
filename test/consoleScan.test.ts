@@ -11,7 +11,7 @@ const multi = `function f() {
   done();
 }`;
 
-test('多行调用：注释 / 取消注释往返', () => {
+test('multi-line call: comment / uncomment round-trip', () => {
   const c = runBatch(multi, 'comment');
   assert.equal(
     c.out,
@@ -30,18 +30,18 @@ test('多行调用：注释 / 取消注释往返', () => {
   assert.equal(runBatch(c.out, 'uncomment').out, multi);
 });
 
-test('多行调用：删除整块', () => {
+test('multi-line call: delete the whole block', () => {
   assert.equal(runBatch(multi, 'delete').out, 'function f() {\n  done();\n}');
 });
 
-test('字符串 / 注释里的括号不影响配对', () => {
+test('parens inside strings / comments do not break matching', () => {
   const t = "console.log('(', `a${b}\n)`, /* ) */ x); // )\nnext();";
   const [b] = scanConsole(splitLines(t), 'a.ts');
   assert.equal(b.endLine, 1);
   assert.equal(b.trailing, false);
 });
 
-test('同行有其他代码：注释跳过，删除只删调用', () => {
+test('call sharing a line with other code: comment skips, delete removes only the call', () => {
   const t = 'console.log(a); doSomething();\nx();';
   const c = runBatch(t, 'comment');
   assert.equal(c.count, 0);
@@ -49,34 +49,95 @@ test('同行有其他代码：注释跳过，删除只删调用', () => {
   assert.equal(runBatch(t, 'delete').out, 'doSomething();\nx();');
 });
 
-test('行尾注释不算同行代码', () => {
+test('a trailing line comment does not count as other code', () => {
   assert.equal(runBatch('console.log(a); // hi\nx();', 'comment').out, '// console.log(a); // hi\nx();');
 });
 
-test('相邻块删除到文件末尾不产生重叠范围', () => {
+test('adjacent blocks deleted to end of file produce no overlapping ranges', () => {
   assert.equal(runBatch('a();\nconsole.log(1);\nconsole.log(2);', 'delete').out, 'a();');
   assert.equal(runBatch('console.log(1);\nconsole.log(2);', 'delete').out, '');
 });
 
-test('未闭合的被注释调用退化为单行', () => {
+test('an unclosed commented call degrades to a single line', () => {
   const t = '// console.log(foo,\nbar();';
   const [b] = scanConsole(splitLines(t), 'a.ts');
   assert.equal(b.endLine, 0);
   assert.equal(runBatch(t, 'uncomment').out, 'console.log(foo,\nbar();');
 });
 
-test('识别 console.trace', () => {
+test('console.trace is recognized', () => {
   assert.deepEqual(scanConsole(['console.trace(x);'], 'a.ts').map((b) => b.level), ['trace']);
 });
 
-test('Python：# 注释 print', () => {
+test('more console methods are recognized', () => {
+  const t = 'console.table(t);\nconsole.timeEnd("k");\nconsole.assert(ok, "no");\nconsole.count("hit");';
+  assert.deepEqual(
+    scanConsole(splitLines(t), 'a.ts').map((b) => b.level),
+    ['table', 'timeEnd', 'assert', 'count']
+  );
+});
+
+test('inline calls: detected, skipped when commenting, deleted alone at statement boundaries', () => {
+  const t = 'if (ok) console.log(a);\nfoo(); console.warn(b); bar();\n{ console.info(c) }';
+  const blocks = scanConsole(splitLines(t), 'a.ts');
+  assert.equal(blocks.length, 3);
+  assert.ok(blocks.every((b) => b.inline));
+  const c = runBatch(t, 'comment');
+  assert.equal(c.count, 0);
+  assert.equal(c.skipped, 3);
+  const d = runBatch(t, 'delete');
+  assert.equal(d.out, 'if (ok) console.log(a);\nfoo(); bar();\n{ }');
+  assert.equal(d.count, 2);
+  assert.equal(d.skipped, 1);
+});
+
+test('inline calls in expression position are never deleted', () => {
+  for (const t of [
+    'arr.forEach(x => console.log(x));',
+    'ok && console.log(a);',
+    'foo(console.log(a), b);',
+    'const v = cond ? 1 : console.log(a);',
+    'else console.log(a);',
+  ]) {
+    const r = runBatch(t, 'delete');
+    assert.equal(r.out, t, t);
+    assert.equal(r.skipped, 1, t);
+  }
+});
+
+test('line-start call followed by an operator is not deleted', () => {
+  const t = 'console.log(a) || fallback();';
+  assert.equal(runBatch(t, 'delete').out, t);
+  assert.equal(runBatch('console.log(a); next();', 'delete').out, 'next();');
+});
+
+test('multiple calls on one line are all found', () => {
+  const blocks = scanConsole(['console.log(a); console.log(b);'], 'a.ts');
+  assert.equal(blocks.length, 2);
+  assert.equal(blocks[0].inline, false);
+  assert.equal(blocks[1].inline, true);
+});
+
+test('calls inside comments and strings are not matched', () => {
+  const t = [
+    'x = 1; // console.log(faked)',
+    'const s = "console.log(faked)";',
+    'call("a;b"); console.log(real)',
+  ].join('\n');
+  const blocks = scanConsole(splitLines(t), 'a.ts');
+  assert.equal(blocks.length, 1);
+  assert.equal(blocks[0].line, 2);
+  assert.equal(blocks[0].inline, true);
+});
+
+test('Python: comment print with #', () => {
   const t = 'def f(x):\n    print(\n        x)\n';
   const c = runBatch(t, 'comment', 'a.py');
   assert.equal(c.out, 'def f(x):\n    # print(\n    #     x)\n');
   assert.equal(runBatch(c.out, 'uncomment', 'a.py').out, t);
 });
 
-test('生成日志识别：自定义函数与多行，空前缀拒绝', () => {
+test('generated-log detection: custom function and multi-line, empty prefix refused', () => {
   const t = [
     "console.log('🪵 ~ a.ts:1 ~ x:', x);",
     "console.log('mine', x);",

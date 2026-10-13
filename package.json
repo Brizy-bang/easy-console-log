@@ -2,7 +2,7 @@
   "name": "easy-console-log",
   "displayName": "Easy Console Log",
   "description": "%easyConsoleLog.description%",
-  "version": "0.3.2",
+  "version": "0.4.0",
   "publisher": "Brizy-b",
   "license": "MIT",
   "repository": {
@@ -70,6 +70,21 @@
       {
         "command": "easyConsoleLog.workspace.deleteAll",
         "title": "%easyConsoleLog.command.workspace.deleteAll%",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "easyConsoleLog.changed.commentAll",
+        "title": "%easyConsoleLog.command.changed.commentAll%",
+        "icon": "$(comment)"
+      },
+      {
+        "command": "easyConsoleLog.changed.uncommentAll",
+        "title": "%easyConsoleLog.command.changed.uncommentAll%",
+        "icon": "$(unfold)"
+      },
+      {
+        "command": "easyConsoleLog.changed.deleteAll",
+        "title": "%easyConsoleLog.command.changed.deleteAll%",
         "icon": "$(trash)"
       },
       {
@@ -211,6 +226,21 @@
           "group": "navigation@3"
         },
         {
+          "command": "easyConsoleLog.changed.commentAll",
+          "when": "view == easyConsoleLog.workspace",
+          "group": "1.changed@1"
+        },
+        {
+          "command": "easyConsoleLog.changed.uncommentAll",
+          "when": "view == easyConsoleLog.workspace",
+          "group": "1.changed@2"
+        },
+        {
+          "command": "easyConsoleLog.changed.deleteAll",
+          "when": "view == easyConsoleLog.workspace",
+          "group": "1.changed@3"
+        },
+        {
           "command": "easyConsoleLog.explorer.filter",
           "when": "view == easyConsoleLog.workspace",
           "group": "navigation@4"
@@ -295,6 +325,7 @@
         "easyConsoleLog.logMessagePrefix": {
           "type": "string",
           "default": "🪵",
+          "scope": "language-overridable",
           "description": "%easyConsoleLog.logMessagePrefix.description%"
         },
         "easyConsoleLog.quote": {
@@ -305,36 +336,43 @@
             "`"
           ],
           "default": "'",
+          "scope": "language-overridable",
           "description": "%easyConsoleLog.quote.description%"
         },
         "easyConsoleLog.addSemicolon": {
           "type": "boolean",
           "default": true,
+          "scope": "language-overridable",
           "description": "%easyConsoleLog.addSemicolon.description%"
         },
         "easyConsoleLog.logFunction": {
           "type": "string",
           "default": "console.log",
+          "scope": "language-overridable",
           "description": "%easyConsoleLog.logFunction.description%"
         },
         "easyConsoleLog.includeFilename": {
           "type": "boolean",
           "default": true,
+          "scope": "language-overridable",
           "description": "%easyConsoleLog.includeFilename.description%"
         },
         "easyConsoleLog.includeLineNumber": {
           "type": "boolean",
           "default": true,
+          "scope": "language-overridable",
           "description": "%easyConsoleLog.includeLineNumber.description%"
         },
         "easyConsoleLog.messageTemplate": {
           "type": "string",
           "default": "${prefix} ~ ${location} ~ ${expr}:",
+          "scope": "language-overridable",
           "description": "%easyConsoleLog.messageTemplate.description%"
         },
         "easyConsoleLog.diagnostics.enabled": {
           "type": "boolean",
           "default": true,
+          "scope": "language-overridable",
           "description": "%easyConsoleLog.diagnostics.enabled.description%"
         },
         "easyConsoleLog.diagnostics.severity": {
@@ -346,25 +384,49 @@
             "hint"
           ],
           "default": "hint",
+          "scope": "language-overridable",
           "description": "%easyConsoleLog.diagnostics.severity.description%"
         },
         "easyConsoleLog.updateLineNumbersOnSave": {
           "type": "boolean",
           "default": false,
+          "scope": "language-overridable",
           "description": "%easyConsoleLog.updateLineNumbersOnSave.description%"
+        },
+        "easyConsoleLog.workspace.excludeDirs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "node_modules",
+            "dist",
+            "out",
+            "build",
+            ".git",
+            "vendor",
+            "coverage",
+            ".next",
+            ".nuxt",
+            ".output",
+            ".svelte-kit"
+          ],
+          "scope": "resource",
+          "description": "%easyConsoleLog.workspace.excludeDirs.description%"
         }
       }
     }
   },
   "scripts": {
     "vscode:prepublish": "npm run typecheck && npm run lint && npm test && npm run esbuild-base -- --minify",
-    "compile": "tsc -p ./",
-    "watch": "tsc -watch -p ./",
+    "compile": "npm run esbuild",
+    "watch": "npm run esbuild-base -- --sourcemap --watch",
     "typecheck": "tsc -p ./ --noEmit && tsc -p ./test",
     "test": "esbuild test/*.test.ts --bundle --platform=node --format=cjs --outdir=out-test --log-level=warning && node --test out-test/",
     "esbuild-base": "esbuild ./src/extension.ts ./src/astResolver.ts --bundle --outdir=./out --external:vscode --external:./astResolver --format=cjs --platform=node --supported:dynamic-import=false",
     "esbuild": "npm run esbuild-base -- --sourcemap",
-    "lint": "eslint src test"
+    "lint": "eslint src test",
+    "smoke": "node scripts/smoke-bundle.cjs"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

@@ -1,56 +1,83 @@
 /**
- * 纯文本扫描与编辑计算（不依赖 vscode，便于单测）。
- * 以"调用块"为单位识别 console.* / print 等调用，支持跨多行的调用与多行注释块。
+ * Plain-text scanning and edit computation (no vscode dependency, so it is unit-testable).
+ * Calls such as console.* / print are recognized as "call blocks", supporting calls that
+ * span multiple lines and multi-line commented blocks.
  */
 import type { EclConfig } from './config';
 import { generatedMarker, isPythonFile, logFunctionForFile, quoteFor, escapeForQuote } from './logStatement';
 
 export type BatchMode = 'comment' | 'uncomment' | 'delete';
 
-/** 单个调用块（可能跨多行） */
+/** A single call block (may span multiple lines) */
 export interface LogBlock {
-  /** 起始行（0-based） */
+  /** Start line (0-based) */
   line: number;
-  /** 结束行（0-based） */
+  /** End line (0-based) */
   endLine: number;
-  /** 调用（含分号）在 endLine 上的结束列（不含） */
+  /** Column on endLine where the call (including the semicolon) ends, exclusive */
   endChar: number;
-  /** 调用全文（去掉注释符并把换行折叠为空格），用于展示和识别 */
+  /** Column on the start line where the callee name begins (e.g. the c of console) */
+  callStart: number;
+  /** Other code precedes the call on the same line (e.g. `if (x) console.log(y)`):
+   * only the call itself may be deleted; whole-line commenting is unsafe */
+  inline: boolean;
+  /** Full call text (comment tokens stripped, newlines folded into spaces), for display and matching */
   body: string;
-  /** 是否已被注释 */
+  /** Whether the call is commented out */
   commented: boolean;
-  /** log / debug / info / warn / error，或自定义日志函数名 */
+  /** log / debug / info / warn / error, or a custom log function name */
   level: string;
-  /** 起始行缩进长度 */
+  /** Indent length of the start line */
   indentLen: number;
-  /** 起始行注释符（含其后空白）的长度，未注释为 0 */
+  /** Length of the comment token (plus following whitespace) on the start line; 0 when uncommented */
   commentLen: number;
-  /** 结束行在调用之后还有其他代码（按行注释/删除会误伤，需要特殊处理） */
+  /** Other code follows the call on its end line (line-level comment/delete needs special handling) */
   trailing: boolean;
+  /** The call sits at statement boundaries on both sides, so removing it cannot break the surrounding code
+   * (e.g. false for `if (x) console.log(y)`, `x => console.log(x)`, `a && console.log(b)`) */
+  deletable: boolean;
 }
 
-/** 与 vscode 无关的行级编辑 */
+/** Line-level edit, independent of vscode */
 export type LineEdit =
   | { kind: 'insert'; line: number; char: number; text: string }
   | { kind: 'delete'; line: number; char: number; endLine: number; endChar: number }
   | { kind: 'replace'; line: number; char: number; endLine: number; endChar: number; text: string };
 
 interface ScanOptions {
-  /** 调用名正则片段（内部只能使用非捕获组） */
+  /** Callee-name regex fragments (must only use non-capturing groups internally) */
   names: string[];
-  /** 行注释符 */
+  /** Line comment token */
   commentToken: string;
-  /** 是否为 JS 系语法（反引号字符串、块注释、分号） */
+  /** JS-family syntax (backtick strings, block comments, semicolons) */
   jsLike: boolean;
 }
 
-/** 单个调用块最多跨越的行数，超过视为无法闭合 */
+/** Maximum number of lines a single call block may span; beyond that it is considered unclosed */
 const MAX_SPAN = 500;
 
-/** 支持的 console 级别（均可接收"消息 + 值"形式的参数） */
+/** Supported console levels (all accept "message + value" arguments), selectable on insert */
 export const CONSOLE_LEVELS = ['log', 'info', 'debug', 'warn', 'error', 'trace'] as const;
 
-export const CONSOLE_NAMES = [`console\\.(?:${CONSOLE_LEVELS.join('|')})`];
+/** Extra console methods recognized for scanning/cleanup but not offered as insert levels */
+export const CONSOLE_EXTRA = [
+  'table',
+  'dir',
+  'count',
+  'countReset',
+  'group',
+  'groupCollapsed',
+  'groupEnd',
+  'time',
+  'timeLog',
+  'timeEnd',
+  'assert',
+] as const;
+
+/** All scannable console methods */
+export const CONSOLE_SCAN_METHODS = [...CONSOLE_LEVELS, ...CONSOLE_EXTRA];
+
+export const CONSOLE_NAMES = [`console\\.(?:${CONSOLE_SCAN_METHODS.join('|')})`];
 
 export function escapeRegExp(text: string): string {
   return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -60,7 +87,7 @@ export function commentTokenFor(fileName: string): string {
   return isPythonFile(fileName) ? '#' : '//';
 }
 
-/** 将文本拆分为行（与 VSCode 的行号一致） */
+/** Split text into lines (consistent with VS Code line numbers) */
 export function splitLines(text: string): string[] {
   return text.split(/\r\n|\r|\n/);
 }
@@ -69,7 +96,7 @@ function leadingWs(text: string): number {
   return text.length - text.trimStart().length;
 }
 
-/** 从 (startLine, startCol)（左括号之后）开始做括号配对，返回右括号位置 */
+/** Match parens starting at (startLine, startCol), right after the opening paren; return the closing paren position */
 function findCallEnd(
   lines: readonly string[],
   startLine: number,
@@ -86,7 +113,7 @@ function findCallEnd(
     const text = lines[j];
     let k = startCol;
     if (j > startLine) {
-      // 被注释的调用块，后续行也必须是注释行
+      // in a commented call block, continuation lines must be comment lines too
       const c = commented ? contRe.exec(text) : null;
       if (commented && !c) {
         return undefined;
@@ -121,7 +148,7 @@ function findCallEnd(
         }
       }
     }
-    // 普通字符串不会跨行，只有模板字符串会
+    // plain strings cannot span lines; only template literals can
     if (quote !== '`') {
       quote = undefined;
     }
@@ -129,25 +156,97 @@ function findCallEnd(
   return undefined;
 }
 
+/**
+ * Whether the text before a call allows it to count as an inline call.
+ * Tracks quote state char by char: a call after a line comment, inside an unclosed
+ * string, or right after an identifier / member-access character does not count.
+ */
+function inlineAllowed(text: string, idx: number, opts: ScanOptions): boolean {
+  const prev = text[idx - 1];
+  if (prev !== undefined && /[\w$.]/.test(prev)) {
+    return false;
+  }
+  let quote: string | undefined;
+  for (let j = 0; j < idx; j++) {
+    const ch = text[j];
+    if (quote) {
+      if (ch === '\\') {
+        j++;
+      } else if (ch === quote) {
+        quote = undefined;
+      }
+    } else if (ch === '"' || ch === "'" || (opts.jsLike && ch === '`')) {
+      quote = ch;
+    } else if (text.startsWith(opts.commentToken, j)) {
+      return false;
+    } else if (opts.jsLike && ch === '/' && text[j + 1] === '*') {
+      return false;
+    }
+  }
+  return quote === undefined;
+}
+
+/**
+ * Scan call blocks line by line. A line may contain several calls (from the second
+ * one on they are inline calls); after a multi-line block ends, the rest of its end
+ * line keeps being scanned.
+ */
 function scanBlocks(lines: readonly string[], opts: ScanOptions): LogBlock[] {
   const tok = escapeRegExp(opts.commentToken);
   const headRe = new RegExp(`^(\\s*)(${tok}\\s*)?(${opts.names.join('|')})\\s*\\(`);
+  const inlineRe = new RegExp(`(${opts.names.join('|')})\\s*\\(`, 'g');
   const contRe = new RegExp(`^(\\s*)${tok} ?`);
   const blocks: LogBlock[] = [];
-  for (let i = 0; i < lines.length; i++) {
+  /** After a multi-line block ends, the column its end line must be rescanned from */
+  const resume = new Map<number, number>();
+
+  let i = 0;
+  while (i < lines.length) {
     const text = lines[i];
-    const m = headRe.exec(text);
-    if (!m) {
+    const from = resume.get(i) ?? 0;
+    resume.delete(i);
+
+    let callStart = -1;
+    let argsStart = -1;
+    let levelText = '';
+    let indentLen = 0;
+    let commentLen = 0;
+    let commented = false;
+
+    const m = from === 0 ? headRe.exec(text) : null;
+    if (m) {
+      indentLen = m[1].length;
+      commentLen = m[2]?.length ?? 0;
+      commented = m[2] !== undefined;
+      callStart = indentLen + commentLen;
+      argsStart = m[0].length;
+      levelText = m[3];
+    } else {
+      inlineRe.lastIndex = from;
+      let hit: RegExpExecArray | null;
+      while ((hit = inlineRe.exec(text))) {
+        if (inlineAllowed(text, hit.index, opts)) {
+          callStart = hit.index;
+          argsStart = hit.index + hit[0].length;
+          levelText = hit[1];
+          break;
+        }
+      }
+    }
+
+    if (callStart < 0) {
+      i++;
       continue;
     }
-    const indentLen = m[1].length;
-    const commentLen = m[2]?.length ?? 0;
-    const commented = m[2] !== undefined;
-    const end = findCallEnd(lines, i, m[0].length, commented, contRe, opts);
 
+    const end = findCallEnd(lines, i, argsStart, commented, contRe, opts);
+
+    const inline = callStart !== indentLen + commentLen || from > 0;
     let endLine = i;
     let endChar = text.length;
     let trailing = false;
+    // an unclosed inline call cannot be cut out safely; an unclosed line-start call is deleted as a whole line
+    let afterOk = !inline;
     if (end) {
       endLine = end.endLine;
       endChar = end.endChar;
@@ -156,12 +255,16 @@ function scanBlocks(lines: readonly string[], opts: ScanOptions): LogBlock[] {
       while (endText[p] === ' ' || endText[p] === '\t') {
         p++;
       }
-      if (opts.jsLike && endText[p] === ';') {
+      const semi = opts.jsLike && endText[p] === ';';
+      if (semi) {
         endChar = p + 1;
       }
       const rest = endText.slice(endChar).trim();
       trailing = !commented && rest !== '' && !rest.startsWith(opts.commentToken);
+      afterOk = commented || semi || !trailing || (opts.jsLike && rest.startsWith('}'));
     }
+    const before = text.slice(0, callStart).trimEnd();
+    const beforeOk = !inline || before === '' || (opts.jsLike ? /[;{}]$/ : /;$/).test(before);
 
     const parts: string[] = [];
     for (let k = i; k <= endLine; k++) {
@@ -170,7 +273,7 @@ function scanBlocks(lines: readonly string[], opts: ScanOptions): LogBlock[] {
         t = t.slice(0, endChar);
       }
       if (k === i) {
-        t = t.slice(indentLen + commentLen);
+        t = t.slice(callStart);
       } else if (commented) {
         t = t.replace(contRe, '');
       }
@@ -181,19 +284,24 @@ function scanBlocks(lines: readonly string[], opts: ScanOptions): LogBlock[] {
       line: i,
       endLine,
       endChar,
+      callStart,
+      inline,
       body: parts.filter(Boolean).join(' '),
       commented,
-      level: m[3].replace(/^console\./, ''),
+      level: levelText.replace(/^console\./, ''),
       indentLen,
       commentLen,
       trailing,
+      deletable: beforeOk && afterOk,
     });
+    // the end line may contain more calls — record the rescan column; same-line calls resume scanning the remainder
+    resume.set(endLine, endChar);
     i = endLine;
   }
   return blocks;
 }
 
-/** 扫描所有 console.* 调用（Python 文件扫描 print） */
+/** Scan all console.* calls (Python files scan print) */
 export function scanConsole(lines: readonly string[], fileName: string): LogBlock[] {
   const py = isPythonFile(fileName);
   return scanBlocks(lines, {
@@ -203,15 +311,16 @@ export function scanConsole(lines: readonly string[], fileName: string): LogBloc
   });
 }
 
-/** 判断调用块是否为本扩展生成（首个实参是以 marker 开头的字符串） */
+/** Whether a block was generated by this extension (first argument is a string starting with the marker) */
 export function isGenerated(block: LogBlock, marker: string): boolean {
   const rest = block.body.slice(block.body.indexOf('(') + 1).trimStart();
   return /^['"`]/.test(rest) && rest.slice(1).startsWith(marker);
 }
 
 /**
- * 扫描本扩展生成的日志。
- * 返回 undefined 表示当前配置下无法可靠识别（如前缀为空），调用方应拒绝批量操作以免误伤。
+ * Scan logs generated by this extension.
+ * Returns undefined when they cannot be recognized reliably under the current config
+ * (e.g. empty prefix); callers should refuse batch operations to avoid collateral damage.
  */
 export function scanGenerated(
   lines: readonly string[],
@@ -231,23 +340,20 @@ export function scanGenerated(
   );
 }
 
-/** 某个块在给定模式下是否需要处理 */
+/** Whether a block needs processing under the given mode */
 export function isApplicable(block: LogBlock, mode: BatchMode): boolean {
   return mode === 'comment' ? !block.commented : mode === 'uncomment' ? block.commented : true;
 }
 
-/** 计算单个块的注释/取消注释编辑；与其他代码同行而无法安全处理时返回 undefined */
-function toggleEdits(
-  lines: readonly string[],
-  b: LogBlock,
-  mode: 'comment' | 'uncomment',
-  token: string
-): LineEdit[] | undefined {
+/** Whether an applicable block must be skipped because the edit would break the surrounding code */
+export function isSkipped(block: LogBlock, mode: BatchMode): boolean {
+  return mode === 'comment' ? block.trailing || block.inline : mode === 'delete' ? !block.deletable : false;
+}
+
+/** Compute comment/uncomment edits for one block */
+function toggleEdits(lines: readonly string[], b: LogBlock, mode: 'comment' | 'uncomment', token: string): LineEdit[] {
   const edits: LineEdit[] = [];
   if (mode === 'comment') {
-    if (b.trailing) {
-      return undefined;
-    }
     for (let k = b.line; k <= b.endLine; k++) {
       const char = k === b.line ? b.indentLen : Math.min(b.indentLen, leadingWs(lines[k]));
       edits.push({ kind: 'insert', line: k, char, text: `${token} ` });
@@ -271,23 +377,24 @@ function toggleEdits(
   return edits;
 }
 
-/** 删除整行区间 [from, to]，处理最后一行无换行符的情况 */
+/** Delete the whole-line range [from, to], handling a last line without a trailing newline */
 function deleteLines(lines: readonly string[], from: number, to: number): LineEdit {
   const last = lines.length - 1;
   if (to < last) {
     return { kind: 'delete', line: from, char: 0, endLine: to + 1, endChar: 0 };
   }
   if (from > 0) {
-    // 连同前一行的换行一起删掉，避免残留空行
+    // also consume the previous line's newline so no empty line is left behind
     return { kind: 'delete', line: from - 1, char: lines[from - 1].length, endLine: to, endChar: lines[to].length };
   }
   return { kind: 'delete', line: from, char: 0, endLine: to, endChar: lines[to].length };
 }
 
 /**
- * 计算一批块的编辑。
- * - comment：与其他代码同行的块会被跳过（计入 skipped）
- * - delete：同行有其他代码时只删调用本身，否则整行删除，相邻整行区间会合并避免范围重叠
+ * Compute edits for a set of blocks.
+ * - comment: blocks sharing a line with other code are skipped (counted in skipped)
+ * - delete: when other code shares the line only the call is removed (skipped unless it sits at statement
+ *   boundaries); otherwise whole lines are deleted and adjacent line ranges are merged to avoid overlapping edits
  */
 export function batchEdits(
   lines: readonly string[],
@@ -295,31 +402,29 @@ export function batchEdits(
   mode: BatchMode,
   token: string
 ): { edits: LineEdit[]; count: number; skipped: number } {
-  const targets = blocks.filter((b) => isApplicable(b, mode));
+  const applicable = blocks.filter((b) => isApplicable(b, mode));
+  const targets = applicable.filter((b) => !isSkipped(b, mode));
+  const skipped = applicable.length - targets.length;
   const edits: LineEdit[] = [];
-  let skipped = 0;
 
   if (mode !== 'delete') {
     for (const b of targets) {
-      const e = toggleEdits(lines, b, mode, token);
-      if (e) {
-        edits.push(...e);
-      } else {
-        skipped++;
-      }
+      edits.push(...toggleEdits(lines, b, mode, token));
     }
-    return { edits, count: targets.length - skipped, skipped };
+    return { edits, count: targets.length, skipped };
   }
 
   const ranges: [number, number][] = [];
   for (const b of [...targets].sort((a, c) => a.line - c.line)) {
-    if (b.trailing) {
+    if (b.inline || b.trailing) {
+      // inline or followed by other code: delete only the call (plus adjacent whitespace), keep the rest
       const text = lines[b.endLine];
       let e = b.endChar;
       while (text[e] === ' ' || text[e] === '\t') {
         e++;
       }
-      edits.push({ kind: 'delete', line: b.line, char: b.indentLen, endLine: b.endLine, endChar: e });
+      const s = b.inline ? b.callStart : b.indentLen;
+      edits.push({ kind: 'delete', line: b.line, char: s, endLine: b.endLine, endChar: e });
       continue;
     }
     const prev = ranges[ranges.length - 1];
@@ -335,7 +440,7 @@ export function batchEdits(
   return { edits, count: targets.length, skipped };
 }
 
-/** 找到包含指定行的块 */
+/** Find the block containing the given line */
 export function blockAtLine(blocks: readonly LogBlock[], line: number): LogBlock | undefined {
   return blocks.find((b) => b.line <= line && line <= b.endLine);
 }

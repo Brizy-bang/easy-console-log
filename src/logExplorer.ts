@@ -1,15 +1,15 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { BatchMode, CONSOLE_LEVELS, LogBlock, scanConsole } from './consoleScan';
+import { BatchMode, CONSOLE_SCAN_METHODS, LogBlock, scanConsole } from './consoleScan';
 import { applyBatchToEditor, docLines, JS_LANGS } from './editUtil';
 import { isScannable, readLines, scanWorkspace, WORKSPACE_GLOB } from './workspaceScan';
 
 export const CURRENT_VIEW_ID = 'easyConsoleLog.explorer';
 export const WORKSPACE_VIEW_ID = 'easyConsoleLog.workspace';
 
-/** 两个视图共享的级别筛选 */
+/** Level filter shared by both views */
 class LevelFilter {
-  private levels = new Set<string>(CONSOLE_LEVELS);
+  private levels = new Set<string>(CONSOLE_SCAN_METHODS);
   private emitter = new vscode.EventEmitter<void>();
   readonly onDidChange = this.emitter.event;
 
@@ -25,7 +25,7 @@ class LevelFilter {
 
 export const levelFilter = new LevelFilter();
 
-/** 日志级别分组节点（当前文件视图） */
+/** Level group node (current-file view) */
 class LogGroupItem extends vscode.TreeItem {
   constructor(
     public readonly level: string,
@@ -39,7 +39,7 @@ class LogGroupItem extends vscode.TreeItem {
   }
 }
 
-/** 文件节点（工作区视图） */
+/** File node (workspace view) */
 class FileItem extends vscode.TreeItem {
   constructor(
     public readonly uri: vscode.Uri,
@@ -56,7 +56,7 @@ class FileItem extends vscode.TreeItem {
   }
 }
 
-/** 单条日志节点 */
+/** Single log node */
 export class LogItem extends vscode.TreeItem {
   constructor(
     public readonly uri: vscode.Uri,
@@ -79,16 +79,16 @@ export class LogItem extends vscode.TreeItem {
 
 type CurrentNode = LogGroupItem | LogItem;
 
-/** 当前文件视图：按级别分组列出活动编辑器中的 console 调用 */
+/** Current-file view: console calls in the active editor, grouped by level */
 export class ConsoleLogExplorerProvider implements vscode.TreeDataProvider<CurrentNode>, vscode.Disposable {
   private emitter = new vscode.EventEmitter<CurrentNode | void>();
   readonly onDidChangeTreeData = this.emitter.event;
-  /** 每次 refresh 扫描一次，供 getChildren 复用 */
+  /** Scanned once per refresh and reused by getChildren */
   private snapshot: { uri: vscode.Uri; blocks: LogBlock[] } | undefined;
   private view: vscode.TreeView<CurrentNode> | undefined;
   private subscription = levelFilter.onDidChange(() => this.emitter.fire());
 
-  /** 绑定 TreeView，用于在刷新时更新描述栏统计 */
+  /** Bind the TreeView to update the description stats on refresh */
   attach(view: vscode.TreeView<CurrentNode>): void {
     this.view = view;
   }
@@ -147,8 +147,8 @@ export class ConsoleLogExplorerProvider implements vscode.TreeDataProvider<Curre
 type WorkspaceNode = FileItem | LogItem;
 
 /**
- * 工作区视图：按文件分组列出工作区内所有 console 调用。
- * 首次展开时才扫描；之后根据编辑与文件系统变化增量更新单个文件。
+ * Workspace view: all console calls in the workspace, grouped by file.
+ * Scanned on first expand; individual files are then updated incrementally on edits and file-system changes.
  */
 export class WorkspaceLogProvider implements vscode.TreeDataProvider<WorkspaceNode>, vscode.Disposable {
   private emitter = new vscode.EventEmitter<WorkspaceNode | void>();
@@ -164,7 +164,7 @@ export class WorkspaceLogProvider implements vscode.TreeDataProvider<WorkspaceNo
     this.view = view;
   }
 
-  /** 丢弃缓存，下次展开时重新扫描 */
+  /** Drop the cache; the next expand rescans */
   refresh(): void {
     this.files = undefined;
     this.loading = undefined;
@@ -200,14 +200,14 @@ export class WorkspaceLogProvider implements vscode.TreeDataProvider<WorkspaceNo
     );
   }
 
-  /** 编辑器中的文档内容变化 */
+  /** Document content changed in the editor */
   onDocumentChanged(doc: vscode.TextDocument): void {
     if (JS_LANGS.has(doc.languageId)) {
       this.schedule(doc.uri, async () => docLines(doc));
     }
   }
 
-  /** 按文件防抖地重新扫描 */
+  /** Rescan a file with debounce */
   private schedule(uri: vscode.Uri, read: () => Promise<string[] | undefined>): void {
     if (!this.files || !isScannable(uri)) {
       return;
@@ -279,9 +279,9 @@ export class WorkspaceLogProvider implements vscode.TreeDataProvider<WorkspaceNo
   }
 }
 
-/** 打开级别筛选 QuickPick（同时作用于两个视图） */
+/** Open the level filter QuickPick (applies to both views) */
 export async function filterLevels(): Promise<void> {
-  const items = CONSOLE_LEVELS.map((level) => ({
+  const items = CONSOLE_SCAN_METHODS.map((level) => ({
     label: `console.${level}`,
     level,
     picked: levelFilter.has(level),
@@ -295,7 +295,7 @@ export async function filterLevels(): Promise<void> {
   }
 }
 
-/** 跳转到指定日志行 */
+/** Jump to the given log line */
 export async function revealLine(uri: vscode.Uri, line: number): Promise<void> {
   const editor = await vscode.window.showTextDocument(uri);
   const pos = new vscode.Position(line, 0);
@@ -306,7 +306,8 @@ export async function revealLine(uri: vscode.Uri, line: number): Promise<void> {
   );
 }
 
-/** 对单条日志执行操作；树节点可能已过期，先按当前内容重新定位，失败时调用 onStale */
+/** Apply an op to a single log; the tree node may be stale, so re-locate by current
+ * content and call onStale on failure */
 async function applyToItem(item: LogItem, mode: (b: LogBlock) => BatchMode, onStale: () => void): Promise<void> {
   const editor = await vscode.window.showTextDocument(item.uri, { preserveFocus: true });
   const lines = docLines(editor.document);
@@ -321,22 +322,22 @@ async function applyToItem(item: LogItem, mode: (b: LogBlock) => BatchMode, onSt
   await applyBatchToEditor(editor, lines, [current], mode(current), false);
 }
 
-/** 切换单条日志的注释状态 */
+/** Toggle the comment state of a single log */
 export function toggleLogItem(item: LogItem, onStale: () => void): Promise<void> {
   return applyToItem(item, (b) => (b.commented ? 'uncomment' : 'comment'), onStale);
 }
 
-/** 删除单条日志 */
+/** Delete a single log */
 export function deleteLogItem(item: LogItem, onStale: () => void): Promise<void> {
   return applyToItem(item, () => 'delete', onStale);
 }
 
-/** 复制日志文本 */
+/** Copy the log text */
 export async function copyLogText(item: LogItem): Promise<void> {
   await vscode.env.clipboard.writeText(item.info.body);
 }
 
-/** 对当前文件所有 console.* 执行批量操作 */
+/** Run a batch operation on all console.* calls in the current file */
 export async function batchOnCurrentFile(mode: BatchMode): Promise<void> {
   const editor = vscode.window.activeTextEditor;
   if (!editor) {

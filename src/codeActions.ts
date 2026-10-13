@@ -3,7 +3,7 @@ import { batchEdits, BatchMode, blockAtLine, commentTokenFor, LogBlock, scanCons
 import { DIAGNOSTIC_SOURCE } from './diagnostics';
 import { applyLineEdits, docLines, JS_LANGS, workspaceSink } from './editUtil';
 
-/** 为 console.* 调用提供 Quick Fix：注释 / 取消注释 / 删除本条，以及本文件批量操作 */
+/** Quick Fix for console.* calls: comment / uncomment / delete this call, plus file-level batch ops */
 export class ConsoleCodeActionProvider implements vscode.CodeActionProvider {
   static readonly metadata: vscode.CodeActionProviderMetadata = {
     providedCodeActionKinds: [vscode.CodeActionKind.QuickFix, vscode.CodeActionKind.RefactorRewrite],
@@ -15,7 +15,8 @@ export class ConsoleCodeActionProvider implements vscode.CodeActionProvider {
     context: vscode.CodeActionContext
   ): vscode.CodeAction[] | undefined {
     const diagnostics = context.diagnostics.filter((d) => d.source === DIAGNOSTIC_SOURCE);
-    // 没有诊断时仅在用户主动请求（Ctrl+.）时提供，避免每行 console 都冒出灯泡
+    // without a diagnostic, only offer actions on explicit request (Ctrl+.),
+    // otherwise every console line would pop a light bulb
     if (!diagnostics.length && context.triggerKind !== vscode.CodeActionTriggerKind.Invoke) {
       return undefined;
     }

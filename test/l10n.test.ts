@@ -6,7 +6,7 @@ import { REASON } from '../src/astResolver';
 
 const root = path.resolve(__dirname, '..');
 
-/** 提取源码中 l10n.t('...') 的字面量 key（支持 '...' + '...' 拼接） */
+/** Extract literal l10n.t('...') keys from the sources (supports '...' + '...' concatenation) */
 function collectKeys(): Set<string> {
   const keys = new Set<string>(Object.values(REASON));
   const srcDir = path.join(root, 'src');
@@ -22,14 +22,14 @@ function collectKeys(): Set<string> {
   return keys;
 }
 
-test('中文 bundle 与源码中的 l10n key 完全一致', () => {
+test('zh-cn bundle matches the l10n keys in the sources exactly', () => {
   const bundle = JSON.parse(fs.readFileSync(path.join(root, 'l10n/bundle.l10n.zh-cn.json'), 'utf8'));
   const keys = collectKeys();
   assert.deepEqual([...keys].filter((k) => !(k in bundle)), [], 'missing translations');
   assert.deepEqual(Object.keys(bundle).filter((k) => !keys.has(k)), [], 'unused translations');
 });
 
-test('nls 中英文 key 一致，且 package.json 引用的 key 都存在', () => {
+test('nls en/zh keys match and every key referenced by package.json exists', () => {
   const en = JSON.parse(fs.readFileSync(path.join(root, 'package.nls.json'), 'utf8'));
   const zh = JSON.parse(fs.readFileSync(path.join(root, 'package.nls.zh-cn.json'), 'utf8'));
   assert.deepEqual(Object.keys(zh).sort(), Object.keys(en).sort());

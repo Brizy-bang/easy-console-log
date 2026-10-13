@@ -1,5 +1,8 @@
 import * as vscode from 'vscode';
 import {
+  changedCommentAll,
+  changedDeleteAll,
+  changedUncommentAll,
   commentAllLogs,
   deleteAllLogs,
   InsertArgs,
@@ -30,7 +33,7 @@ import {
 import { registerDiagnostics } from './diagnostics';
 
 export function activate(context: vscode.ExtensionContext): void {
-  // 注册侧边栏 Console 视图：当前文件 + 工作区
+  // register the sidebar views: current file + workspace
   const provider = new ConsoleLogExplorerProvider();
   const treeView = vscode.window.createTreeView(CURRENT_VIEW_ID, { treeDataProvider: provider });
   provider.attach(treeView);
@@ -55,6 +58,9 @@ export function activate(context: vscode.ExtensionContext): void {
     ['easyConsoleLog.uncommentAll', uncommentAllLogs],
     ['easyConsoleLog.deleteAll', deleteAllLogs],
     ['easyConsoleLog.toggleCurrentLog', toggleCurrentLog],
+    ['easyConsoleLog.changed.commentAll', changedCommentAll],
+    ['easyConsoleLog.changed.uncommentAll', changedUncommentAll],
+    ['easyConsoleLog.changed.deleteAll', changedDeleteAll],
     ['easyConsoleLog.workspace.commentAll', workspaceCommentAll],
     ['easyConsoleLog.workspace.uncommentAll', workspaceUncommentAll],
     ['easyConsoleLog.workspace.deleteAll', workspaceDeleteAll],
@@ -74,7 +80,7 @@ export function activate(context: vscode.ExtensionContext): void {
     context.subscriptions.push(vscode.commands.registerCommand(command, handler));
   }
 
-  // 活动编辑器变化时立即刷新；输入时防抖，避免每次按键都全量重建树
+  // refresh immediately on editor switch; debounce while typing to avoid rebuilding the tree on every keystroke
   let timer: NodeJS.Timeout | undefined;
   context.subscriptions.push(
     vscode.window.onDidChangeActiveTextEditor(() => provider.refresh()),

@@ -13,9 +13,10 @@ export const cfg: EclConfig = {
   diagnosticsEnabled: true,
   diagnosticsSeverity: 'hint',
   updateLineNumbersOnSave: false,
+  workspaceExcludeDirs: [],
 };
 
-/** 将 LineEdit 应用到文本（模拟 VSCode：所有范围基于原文，且不允许重叠） */
+/** Apply LineEdits to text (mimics VS Code: all ranges are based on the original text and must not overlap) */
 export function applyEdits(text: string, edits: readonly LineEdit[]): string {
   const lines = splitLines(text);
   const off = (l: number, c: number) => lines.slice(0, l).reduce((n, s) => n + s.length + 1, 0) + c;
@@ -35,7 +36,7 @@ export function applyEdits(text: string, edits: readonly LineEdit[]): string {
   return out;
 }
 
-/** 对文本中所有 console 调用执行批量操作 */
+/** Run a batch operation on all console calls in the text */
 export function runBatch(text: string, mode: BatchMode, file = 'a.ts') {
   const lines = splitLines(text);
   const r = batchEdits(lines, scanConsole(lines, file), mode, file.endsWith('.py') ? '#' : '//');

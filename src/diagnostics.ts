@@ -12,12 +12,12 @@ const SEVERITY_MAP: Record<string, vscode.DiagnosticSeverity> = {
   hint: vscode.DiagnosticSeverity.Hint,
 };
 
-/** 为文档中未注释的 console.* 调用生成诊断 */
+/** Produce diagnostics for uncommented console.* calls in the document */
 export function refreshDiagnostics(
   collection: vscode.DiagnosticCollection,
   doc: vscode.TextDocument
 ): void {
-  const cfg = getConfig();
+  const cfg = getConfig(doc);
   if (!cfg.diagnosticsEnabled || doc.uri.scheme !== 'file' || !JS_LANGS.has(doc.languageId)) {
     collection.delete(doc.uri);
     return;
@@ -27,7 +27,7 @@ export function refreshDiagnostics(
     .filter((b) => !b.commented)
     .map((b) => {
       const d = new vscode.Diagnostic(
-        new vscode.Range(b.line, b.indentLen, b.endLine, b.endChar),
+        new vscode.Range(b.line, b.inline ? b.callStart : b.indentLen, b.endLine, b.endChar),
         vscode.l10n.t('console call'),
         severity
       );
@@ -37,10 +37,10 @@ export function refreshDiagnostics(
   collection.set(doc.uri, diagnostics);
 }
 
-/** 注册诊断更新监听 */
+/** Register diagnostic update listeners */
 export function registerDiagnostics(context: vscode.ExtensionContext): void {
   const collection = vscode.languages.createDiagnosticCollection('easyConsoleLog');
-  // 按文档分别防抖，避免多个文件同时变化时只刷新最后一个
+  // debounce per document so simultaneous changes don't only refresh the last one
   const timers = new Map<string, NodeJS.Timeout>();
   const schedule = (doc: vscode.TextDocument) => {
     const key = doc.uri.toString();

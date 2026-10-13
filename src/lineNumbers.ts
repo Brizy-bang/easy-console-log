@@ -1,18 +1,24 @@
 /**
- * 刷新生成日志消息中的文件名与行号（纯函数，不依赖 vscode）。
- * 代码增删后日志里的 `file:line` 会过时，这里按当前模板重新渲染，保留原有的 ${expr} 文本。
+ * Refresh the file name and line number inside generated log messages (pure, vscode-free).
+ * After code edits the `file:line` part goes stale; this re-renders it with the current
+ * template while keeping the original ${expr} text.
  */
 import type { EclConfig } from './config';
 import { escapeRegExp, LineEdit, LogBlock, scanGenerated } from './consoleScan';
 import { escapeForQuote, generatedMarker, renderMessage } from './logStatement';
 
 const QUOTES = ["'", '"', '`'];
-/** 渲染时代替表达式的占位符，不会被转义也不会出现在正常代码里 */
-const EXPR_SENTINEL = '\u0000';
+/** Sentinels standing in for variable text during rendering; never escaped and absent from real code */
+const SENTINELS: Record<string, string> = { expr: '\u0000', func: '\u0001', cls: '\u0002' };
 
-/** 由模板构建匹配既有消息内容（源码中的转义形式）的正则，第 1 个捕获组为 ${expr} */
-function messageRegExp(cfg: EclConfig, quote: string): RegExp {
-  let exprSeen = false;
+/** Template placeholders whose original text must be preserved (cannot be recomputed without AST) */
+const KEPT_KEYS = new Set(Object.keys(SENTINELS));
+
+/** Build a RegExp matching existing message content (its escaped source form);
+ * keys = capture-group placeholder order */
+function messageRegExp(cfg: EclConfig, quote: string): { re: RegExp; keys: string[] } {
+  const seen = new Set<string>();
+  const keys: string[] = [];
   const source = cfg.messageTemplate
     .split(/(\$\{\w+\})/)
     .map((part) => {
@@ -22,27 +28,29 @@ function messageRegExp(cfg: EclConfig, quote: string): RegExp {
           return escapeRegExp(escapeForQuote(part, quote));
         case 'prefix':
           return escapeRegExp(escapeForQuote(cfg.prefix, quote));
-        case 'expr':
-          if (exprSeen) {
-            return '.*?';
-          }
-          exprSeen = true;
-          return '(.*?)';
         case 'line':
           return '\\d*';
         case 'file':
         case 'location':
-          // 文件可能被重命名、配置可能被修改，因此不限定具体内容
+          // the file may have been renamed and the config changed, so don't constrain the content
           return '.*?';
         default:
+          if (KEPT_KEYS.has(key)) {
+            if (seen.has(key)) {
+              return '.*?';
+            }
+            seen.add(key);
+            keys.push(key);
+            return '(.*?)';
+          }
           return escapeRegExp(part);
       }
     })
     .join('');
-  return new RegExp(`^${source}$`);
+  return { re: new RegExp(`^${source}$`), keys };
 }
 
-/** 在块中找到以 marker 开头的消息字符串，返回其内容范围 */
+/** Find the message string starting with the marker inside a block; return its content range */
 function findMessageLiteral(
   lines: readonly string[],
   block: LogBlock,
@@ -74,8 +82,8 @@ function findMessageLiteral(
 }
 
 /**
- * 计算刷新行号所需的编辑。fileName 为不含目录的文件名。
- * 返回 undefined 表示当前配置下无法识别生成的日志。
+ * Compute the edits needed to refresh line numbers. fileName is the base name.
+ * Returns undefined when generated logs cannot be recognized under the current config.
  */
 export function lineNumberEdits(
   lines: readonly string[],
@@ -95,13 +103,27 @@ export function lineNumberEdits(
       continue;
     }
     const content = lines[lit.line].slice(lit.start, lit.end);
-    const m = regexps.get(lit.quote)?.exec(content);
-    if (!m) {
+    const mr = regexps.get(lit.quote);
+    const m = mr?.re.exec(content);
+    if (!m || !mr) {
       continue;
     }
-    const rendered = escapeForQuote(renderMessage(EXPR_SENTINEL, fileName, b.line + 1, cfg), lit.quote);
-    // 原表达式文本已是转义后的形式，直接放回
-    const next = rendered.replace(EXPR_SENTINEL, () => m[1] ?? '');
+    // the original expression / function / class text is already escaped; put it back verbatim
+    const kept: Record<string, string> = {};
+    mr.keys.forEach((key, idx) => {
+      kept[key] = m[idx + 1] ?? '';
+    });
+    const rendered = escapeForQuote(
+      renderMessage(SENTINELS.expr, fileName, b.line + 1, cfg, {
+        func: SENTINELS.func,
+        cls: SENTINELS.cls,
+      }),
+      lit.quote
+    );
+    let next = rendered;
+    for (const [key, sentinel] of Object.entries(SENTINELS)) {
+      next = next.replace(sentinel, () => kept[key] ?? '');
+    }
     if (next !== content) {
       edits.push({
         kind: 'replace',

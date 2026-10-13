@@ -42,5 +42,10 @@
   "no console calls": "无 console",
   "{0} in {1} file(s)": "{0} 条 / {1} 个文件",
   "Select console levels to show": "选择要显示的 console 级别",
-  "Easy Console Log: the log has changed, list refreshed": "Easy Console Log: 日志内容已变化，列表已刷新"
+  "Easy Console Log: the log has changed, list refreshed": "Easy Console Log: 日志内容已变化，列表已刷新",
+  "Easy Console Log: Git extension is not available": "Easy Console Log: Git 扩展不可用",
+  "Easy Console Log: no Git repository is open": "Easy Console Log: 当前没有打开的 Git 仓库",
+  "Easy Console Log: scanning Git changed files…": "Easy Console Log: 正在扫描 Git 变更文件…",
+  "Easy Console Log: no logs to {0} in Git changed files": "Easy Console Log: Git 变更文件中没有可{0}的日志",
+  "Easy Console Log: choose which logs to {0} in Git changed files": "Easy Console Log: 选择要在 Git 变更文件中{0}的日志"
 }

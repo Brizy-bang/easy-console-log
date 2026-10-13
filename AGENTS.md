@@ -6,6 +6,7 @@
 - `npm run lint`: ESLint (flat config in `eslint.config.mjs`, including `max-len: 120`)
 - `npm test`: unit tests (esbuild bundles `test/*.test.ts` into `out-test/`, then runs them with `node --test`)
 - `npm run esbuild-base -- --minify`: production bundle to `out/extension.js`
+- `npm run smoke`: smoke test against the bundled `out/` (requires a prior esbuild build)
 - `npm run vscode:prepublish`: pre-publish check (typecheck + lint + test + bundle)
 - Debugging: press `F5` in VS Code (the default build task is `npm run watch`)
 
@@ -17,7 +18,7 @@
   `workspaceScan.ts`.
 - `astResolver` (which depends on the TypeScript compiler) must only be loaded dynamically via `loadAst()` in
   `commands.ts`. Do not import it statically, or extension activation will slow down.
-- `esbuild-base` produces two bundles: `out/extension.js` (~26 KB, entry) and `out/astResolver.js` (~3.3 MB,
+- `esbuild-base` produces two bundles: `out/extension.js` (~30 KB, entry) and `out/astResolver.js` (~3.3 MB,
   lazily `import()`ed at runtime via `--external:./astResolver`). Both must stay re-included in `.vscodeignore`.
 - Runtime messages use `vscode.l10n.t('English')`, with the Chinese translation added to
   `l10n/bundle.l10n.zh-cn.json`; `test/l10n.test.ts` checks for missing or unused keys. Strings in

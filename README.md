@@ -16,10 +16,13 @@ A VS Code extension that helps you manage `console.*` statements: insert context
 | `Easy Console Log: Delete All Logs` | `Alt + Shift + D` | Delete all generated logs in the current file (including commented ones) |
 | `Easy Console Log: Toggle Current Log Comment` | `Ctrl + Alt + C` | Toggle comment on the console call(s) under the cursor or selection; multi-cursor supported |
 | `Easy Console Log: Comment/Uncomment/Delete All Logs in Workspace` | — | Batch operations across all files in the workspace |
+| `Easy Console Log: Comment/Uncomment/Delete All Logs in Git Changed Files` | — | Same batch operations, but only on files with Git changes (modified / staged / untracked) — ideal for pre-commit cleanup |
 
 Selecting multiple identifiers separated by commas (e.g. `a, b, c`) generates `console.log({a, b, c})`. Selecting `const x = 1` normalizes to `x`, and `const { a, b } = obj` generates `console.log({a, b})`.
 
 All comment / uncomment / delete operations work on the **whole call**: a `console.log(...)` spanning multiple lines (e.g. wrapped by Prettier) is handled as a unit, so no half-broken code is left behind.
+
+Besides `log / info / debug / warn / error / trace`, scanning and cleanup also recognize `table`, `dir`, `count(Reset)`, `group(Collapsed/End)`, `time(Log/End)` and `assert`. Calls that don't start their line (`if (x) console.log(y)`, `foo(); console.log(x)`, `x => console.log(x)`) are detected too. They are skipped when commenting, since commenting the whole line would break the surrounding code. Deleting removes only the call itself, and only when it is a standalone statement (preceded by line start, `;`, `{` or `}`, and ending with `;`, `}` or the end of the line); calls in expression position such as `if (x) console.log(y)`, `x => console.log(x)` or `a && console.log(b)` are skipped so the code is never broken or silently changed. Calls inside strings and comments are not detected.
 
 To bind a key to a specific level, pass `args` to `easyConsoleLog.insert` in `keybindings.json`:
 
@@ -55,6 +58,16 @@ Open the **Easy Console Log** activity bar icon. The sidebar has two views; the 
 const userName = 'devin';
 console.log('🪵 ~ app.ts:2 ~ userName:', userName);
 ```
+
+With a template like `${prefix} ~ ${func} ~ ${expr}:` the enclosing function name is included:
+
+```ts
+function fetchUser(id: string) {
+  console.log('🪵 ~ fetchUser ~ id:', id);
+}
+```
+
+Anonymous functions and class expressions use their binding name (`const load = () => {}` → `load`, `const Foo = class {}` → `Foo`). Anonymous callbacks without one (e.g. `list.forEach((x) => { ... })`) are skipped, so the nearest named outer function is used.
 
 Member expressions like `this.state.list`, `a?.b` and `a['key']` are fully recognized when the cursor sits on them; keywords, numbers and object-literal keys are ignored. Multi-cursor is supported, and line numbers in the generated messages account for the other inserted logs.
 
@@ -93,10 +106,13 @@ Search for `easyConsoleLog` in VS Code settings:
 | `easyConsoleLog.logFunction` | `console.log` | Log function, e.g. `console.debug` |
 | `easyConsoleLog.includeFilename` | `true` | Include the file name in the message |
 | `easyConsoleLog.includeLineNumber` | `true` | Include the line number in the message |
-| `easyConsoleLog.messageTemplate` | `${prefix} ~ ${location} ~ ${expr}:` | Message template; placeholders: `${prefix}` `${file}` `${line}` `${location}` `${expr}` |
+| `easyConsoleLog.messageTemplate` | `${prefix} ~ ${location} ~ ${expr}:` | Message template; placeholders: `${prefix}` `${file}` `${line}` `${location}` `${func}` `${cls}` `${expr}` (`${func}`/`${cls}` resolve to the enclosing function / class name, JS/TS/Vue/Svelte only) |
+| `easyConsoleLog.workspace.excludeDirs` | `node_modules`, `dist`, `out`, `build`, `.git`, `vendor`, `coverage`, `.next`, `.nuxt`, `.output`, `.svelte-kit` | Directory names excluded from workspace scanning; `files.exclude` and `search.exclude` entries are merged automatically |
 | `easyConsoleLog.diagnostics.enabled` | `true` | Show diagnostic markers on uncommented `console.*` calls (JS/TS/Vue/Svelte only) |
 | `easyConsoleLog.updateLineNumbersOnSave` | `false` | Update file names and line numbers in generated logs on save |
 | `easyConsoleLog.diagnostics.severity` | `hint` | Severity of the diagnostics (`error` / `warning` / `information` / `hint`); `hint` only shows a faint marker and stays out of the Problems panel |
+
+All settings are `language-overridable`, so you can configure them per language or per folder (e.g. a different `logFunction` for Python).
 
 **How generated logs are recognized**: by the fixed text at the start of the message, i.e. the part of the template before the first placeholder other than `${prefix}` (`🪵 ~ ` by default). The call can be `console.log/debug/info/warn/error` or the configured `logFunction` (e.g. `logger.info`).
 
@@ -108,7 +124,7 @@ Type `ecl` (or `ecln` without semicolon) in JS/TS/Vue/Svelte files to expand a c
 
 ```bash
 npm install
-npm run compile   # or npm run watch for continuous compilation
+npm run esbuild   # bundle to out/; npm run watch for continuous rebuilds (esbuild --watch)
 npm run typecheck # type check (including tests)
 npm run lint      # ESLint
 npm test          # unit tests (bundled with esbuild, run with node:test)
@@ -130,4 +146,5 @@ code --install-extension easy-console-log-<version>.vsix
 - For brace-less single-statement branches like `if (cond) doThing(x)`, the log is inserted after the whole `if` statement (semantically safe, but evaluated after the branch finishes).
 - The `Comment/Uncomment/Delete All Logs` commands only affect logs generated by this extension; the sidebar batch buttons affect **all** `console.*` calls in the current file.
 - Calls sharing a line with other code (`console.log(a); foo();`) are skipped with a notice when commenting; deleting removes only the call itself.
-- Workspace batch operations scan JS/TS/Vue/Svelte files, skipping `node_modules`, `dist`, `coverage`, `.next`, etc., as well as `*.min.js` and bundled files with very long lines. You choose between "generated logs only" and "all console.*" before running; changes are not saved automatically, but the result notification offers a one-click save.
+- Workspace batch operations scan JS/TS/Vue/Svelte files. Excluded directories are configurable via `easyConsoleLog.workspace.excludeDirs` and merged with `files.exclude` / `search.exclude`; `*.min.js` and bundled files with very long lines are always skipped. You choose between "generated logs only" and "all console.*" before running; changes are not saved automatically, but the result notification offers a one-click save.
+- Deleting an inline call like `if (x) console.log(y)` removes only the call and may leave an incomplete statement (e.g. a dangling `if (x)`); check the result before saving.

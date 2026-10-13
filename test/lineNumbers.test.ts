@@ -10,7 +10,7 @@ const update = (text: string, fileName = 'app.ts', c = cfg) => {
   return { out: applyEdits(text, r.edits), count: r.count };
 };
 
-test('刷新过时的行号，保留表达式文本', () => {
+test('refresh stale line numbers, keep the expression text', () => {
   const t = [
     'const a = 1;',
     '',
@@ -30,22 +30,28 @@ test('刷新过时的行号，保留表达式文本', () => {
   );
 });
 
-test('行号正确时不产生编辑；不碰手写日志', () => {
+test('correct line numbers produce no edits; hand-written logs untouched', () => {
   const r = update("console.log('🪵 ~ app.ts:1 ~ a:', a);\nconsole.log('app.ts:1', b);");
   assert.equal(r.count, 0);
 });
 
-test('文件重命名后同时更新文件名；多行调用', () => {
+test('renamed files get the new name; multi-line call', () => {
   const t = "x();\nconsole.log(\n  \"🪵 ~ old.ts:1 ~ value:\",\n  value\n);";
   assert.equal(update(t, 'new.ts').out, "x();\nconsole.log(\n  \"🪵 ~ new.ts:2 ~ value:\",\n  value\n);");
 });
 
-test('自定义模板与关闭文件名', () => {
+test('custom template with file name disabled', () => {
   const c = { ...cfg, includeFilename: false, messageTemplate: '${prefix} [${line}] ${expr} =' };
   const t = "\n\nconsole.log('🪵 [1] user.name =', user.name);";
   assert.equal(update(t, 'a.ts', c).out, "\n\nconsole.log('🪵 [3] user.name =', user.name);");
 });
 
-test('空前缀时返回 undefined', () => {
+test('${func}/${cls} placeholders keep their original text on refresh', () => {
+  const c = { ...cfg, messageTemplate: '${prefix} ~ ${location} ~ ${func} ~ ${expr}:' };
+  const t = '\nconsole.log(\'🪵 ~ app.ts:1 ~ fetchUser ~ id:\', id);';
+  assert.equal(update(t, 'app.ts', c).out, '\nconsole.log(\'🪵 ~ app.ts:2 ~ fetchUser ~ id:\', id);');
+});
+
+test('empty prefix returns undefined', () => {
   assert.equal(lineNumberEdits(['x'], 'a.ts', { ...cfg, prefix: '' }), undefined);
 });

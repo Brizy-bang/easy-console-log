@@ -8,7 +8,7 @@ import {
   splitLines,
 } from './consoleScan';
 
-/** 侧边栏、诊断、工作区批量操作支持的语言（console.* 语义） */
+/** Languages supported by the sidebar, diagnostics and workspace batch ops (console.* semantics) */
 export const JS_LANGS = new Set([
   'javascript',
   'typescript',
@@ -18,7 +18,7 @@ export const JS_LANGS = new Set([
   'svelte',
 ]);
 
-/** 可同时适配 TextEditorEdit 与 WorkspaceEdit 的编辑接收器 */
+/** Edit sink that works with both TextEditorEdit and WorkspaceEdit */
 export interface EditSink {
   insert(pos: vscode.Position, text: string): void;
   delete(range: vscode.Range): void;
@@ -49,7 +49,7 @@ export function workspaceSink(edit: vscode.WorkspaceEdit, uri: vscode.Uri): Edit
   };
 }
 
-/** 转换为 TextEdit 数组（用于 onWillSaveTextDocument 等场景） */
+/** Convert to a TextEdit array (for onWillSaveTextDocument and similar) */
 export function toTextEdits(edits: readonly LineEdit[]): vscode.TextEdit[] {
   const out: vscode.TextEdit[] = [];
   applyLineEdits(
@@ -63,7 +63,7 @@ export function toTextEdits(edits: readonly LineEdit[]): vscode.TextEdit[] {
   return out;
 }
 
-/** 批量操作的动词，用于拼接提示文案 */
+/** Verb for a batch mode, used to compose result messages */
 export function modeVerb(mode: BatchMode): string {
   return mode === 'comment'
     ? vscode.l10n.t('comment out')
@@ -76,7 +76,7 @@ function skippedSuffix(skipped: number): string {
   return skipped ? vscode.l10n.t(' ({0} skipped because they share a line with other code)', skipped) : '';
 }
 
-/** 批量操作结果提示；count 为 0 时提示"没有可处理的日志" */
+/** Batch operation result message; count === 0 means "no logs to process" */
 export function batchResultMessage(mode: BatchMode, count: number, skipped: number): string {
   if (count === 0) {
     return vscode.l10n.t('Easy Console Log: no logs to {0}', modeVerb(mode)) + skippedSuffix(skipped);
@@ -90,7 +90,8 @@ export function batchResultMessage(mode: BatchMode, count: number, skipped: numb
   return done + skippedSuffix(skipped);
 }
 
-/** 对当前编辑器执行一批块操作，并给出结果提示（notify=false 时只提示失败） */
+/** Apply a set of block operations to the current editor and show a result message
+ * (notify=false only reports failures) */
 export async function applyBatchToEditor(
   editor: vscode.TextEditor,
   lines: readonly string[],
