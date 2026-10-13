@@ -1,0 +1,22 @@
+name: Publish to Open VSX
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 20
+      - run: npm ci
+      - run: npm run vscode:prepublish
+      - run: npx ovsx publish --trusted-publishing
